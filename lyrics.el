@@ -1,11 +1,15 @@
+;;; lyrics.el --- Playing with lyrics -*- lexical-binding: t -*-
+
 (require 'cl-lib)
 (require 'request)
+(require 'elquery)
 (require 'mpv)
 (require 'ivy-youtube)
 (require 's)
 (require 'esqlite)
 
 (defconst db (esqlite-stream-open "~/Downloads/cl-lyrics.db"))
+(defconst *socket* "/tmp/mpv-cl-socket")
 
 (defun mappend (fn list)
   (apply #'append (mapcar fn list)))
@@ -14,8 +18,9 @@
   (esqlite-stream-read db query))
 
 (defun search-song (query-str)
-  "Return a list of (\"artist-name | song-name | lyrics-line\"),
-where lyrics-line is the line that contains the `query-str'."
+  "Query the database for all the lyrics lines that match the
+`query-str'. For each match, return that verse line together with
+the artist and song name."
   (let* ((raw-songs (lyrics-db-read
                      (concat "SELECT * from lyrics WHERE lyrics like '%"
                              query-str "%'"))))
@@ -36,7 +41,9 @@ where lyrics-line is the line that contains the `query-str'."
                           ;; Add the artist and song name to the matched line.
                           (list (concat (cl-second song) " | "
                                         (cl-third song)  " | "
-                                        full-line)))))
+                                        full-line)
+                                (cl-second song)
+                                (cl-third song)))))
                     ;; For each lyrics line for the current entry in the db.
                     (s-lines (cl-fourth song)))))
               ;; For each entry in the db.
@@ -50,11 +57,12 @@ where lyrics-line is the line that contains the `query-str'."
   (ivy-read "Select Lyrics: "
             (search-song query-str)
             :action (lambda (song)
-                      (let ((song-no-sep
-                             (split-string (cl-first song) "|")))
-                        (listen-on-youtube
-                         (concat (cl-first song-no-sep)
-                                 (cl-second song-no-sep)))))))
+                      (listen-on-youtube
+                       (concat (cl-second song) " "
+                               (cl-third song))))))
+
+(mpv-pause)
+(lyrics-lyrics "")
 
 (defun youtube-response-id (*qqJson*)
   "Copied from ivy-youtube-wrapper in mpv.el"
@@ -89,9 +97,79 @@ where lyrics-line is the line that contains the `query-str'."
                            (message "403: Unauthorized. Maybe you need to enable your youtube api key"))))
    :complete (message "searching...")))
 
-(listen-on-youtube "void of silence dark static moments")
 
-(lyrics-lyrics "you")
+(defun my-listen (my-list)
+  (unless (null my-list)
+    (async-start (lambda ()
+                   (sleep-for 1)
+                   (car my-list))
+                 (lambda (result)
+                   (message "---> %s" result)
+                   (my-listen (cdr my-list))))))
+;; (my-listen '(1 2 3))
 
-(mpv-pause)
+;; (mpv--enqueue '("get_property" "duration") (lambda (x) (print x)))
+;; (mpv--enqueue '("get_property" "time-pos") (lambda (x) (print x)))
+
+;; (listen-on-youtube "void of silence dark static moments")
+;; (mpv-pause)
+
+
+
+
+;;;; Get the lyrics with elquery
+;; elquery-read-string removes all newlines (issue on github created but no
+;; response), so I've defined a new one, but this uses an internal elquery defun
+
+(defconst lyrics-raw-websites
+  '((makeitpersonal
+     "https://makeitpersonal.co/lyrics?artist=artist-name&title=song-name"
+     ?- nil)
+    (genius
+     "https://genius.com/artist-name-song-name-lyrics"
+     ?- "div.lyrics p")
+    (songlyrics
+     "http://www.songlyrics.com/artist-name/song-name-lyrics/"
+     ?- /n)
+    (metrolyrics
+     "http://www.metrolyrics.com/~song-name-lyrics-~artist-name.html"
+     ?- "p.verse")
+    (musixmatch
+     "https://www.musixmatch.com/lyrics/artist-name/song-name"
+     ?- "p.mxm-lyrics__content")
+    (azlyrics
+     "https://www.azlyrics.com/lyrics/artist-name/song-name.html"
+     nil "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")))
+
+(defconst genius-resp nil)
+(defconst songlyrics-resp nil)
+
+(defun my-elquery-read-string (string)
+  "Return the AST of the HTML string STRING as a plist."
+  (with-temp-buffer
+    (set-buffer-multibyte nil) ; ref debbugs.gnu.org/cgi/bugreport.cgi?bug=31427
+    (insert string)
+    (let ((tree (libxml-parse-html-region (point-min) (point-max))))
+      (thread-last tree
+        (elquery--parse-libxml-tree nil)))))
+
+(request "https://genius.com/anathema-thin-air-lyrics"
+         ;;"http://www.songlyrics.com/anathema/thin-air-lyrics/"
+         :parser 'buffer-string
+         :success (cl-function
+                   (lambda (&key data &allow-other-keys)
+                     (setq genius-resp data))))
+
+(elquery-text
+ (cl-first (elquery-$ "p#songLyricsDiv"
+                      (elquery-read-string songlyrics-resp t))))
+
+(elquery-text
+ (cl-first (elquery-$ "div.lyrics p"
+                      (my-elquery-read-string genius-resp))))
+
+(with-temp-buffer
+  (insert genius-resp)
+  (libxml-parse-html-region (buffer-end -1) (buffer-end 1)))
+
 
