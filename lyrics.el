@@ -17,6 +17,11 @@
 (defun lyrics-db-read (query)
   (esqlite-stream-read db query))
 
+(defun get-lyrics (artist song)
+  (lyrics-db-read
+   (format "SELECT lyrics FROM lyrics WHERE artist=\"%s\" AND song=\"%s\""
+           artist song)))
+
 (defun search-song (query-str)
   "Query the database for all the lyrics lines that match the
 `query-str'. For each match, return that verse line together with
@@ -53,123 +58,107 @@ the artist and song name."
              (string= (cl-first a) (cl-first b))))))
 
 (defun lyrics-lyrics (query-str)
+  "Select and return an entry from the lyrics db."
   (interactive "MSearch lyrics: ")
-  (ivy-read "Select Lyrics: "
+  (let (res)
+    (ivy-read "Select Lyrics: "
             (search-song query-str)
             :action (lambda (song)
-                      (listen-on-youtube
-                       (concat (cl-second song) " "
-                               (cl-third song))))))
-
-(mpv-pause)
-(lyrics-lyrics "")
-
-(defun youtube-response-id (*qqJson*)
-  "Copied from ivy-youtube-wrapper in mpv.el"
-  (let ((search-results (cdr (ivy-youtube-tree-assoc 'items *qqJson*))))
-    (cdr (ivy-youtube-tree-assoc 'videoId (aref search-results 0)))))
-
-(defun browse-youtube (video-id)
-  (browse-url (concat "https://www.youtube.com/watch?v="
-                      video-id)))
-
-(defun play-youtube-video (video-id)
-  (mpv-start "--no-video"
-             (concat "https://www.youtube.com/watch?v="
-                    video-id)))
-
-(defun listen-on-youtube (query-str)
-  (request
-   "https://www.googleapis.com/youtube/v3/search"
-   :params `(("part" . "snippet")
-	     ("q" . ,query-str)
-	     ("type" . "video")
-	     ("maxResults" . 1)
-	     ("key" .  ,ivy-youtube-key))
-   :parser 'json-read
-   :success (cl-function
-	     (lambda (&key data &allow-other-keys)
-               (play-youtube-video (youtube-response-id data))))
-   :status-code '((400 . (lambda (&rest _) (message "Got 400.")))
-		  ;; (200 . (lambda (&rest _) (message "Got 200.")))
-		  (418 . (lambda (&rest _) (message "Got 418.")))
-                  (403 . (lambda (&rest _)
-                           (message "403: Unauthorized. Maybe you need to enable your youtube api key"))))
-   :complete (message "searching...")))
-
-
-(defun my-listen (my-list)
-  (unless (null my-list)
-    (async-start (lambda ()
-                   (sleep-for 1)
-                   (car my-list))
-                 (lambda (result)
-                   (message "---> %s" result)
-                   (my-listen (cdr my-list))))))
-;; (my-listen '(1 2 3))
-
-;; (mpv--enqueue '("get_property" "duration") (lambda (x) (print x)))
-;; (mpv--enqueue '("get_property" "time-pos") (lambda (x) (print x)))
-
-;; (listen-on-youtube "void of silence dark static moments")
-;; (mpv-pause)
-
-
-
+                      (print song)
+                      (setf res (concat (cl-second song) " "
+                                        (cl-third song)))))
+    res))
 
 ;;;; Get the lyrics with elquery
 ;; elquery-read-string removes all newlines (issue on github created but no
 ;; response), so I've defined a new one, but this uses an internal elquery defun
 
-(defconst lyrics-raw-websites
-  '((makeitpersonal
-     "https://makeitpersonal.co/lyrics?artist=artist-name&title=song-name"
-     ?- nil)
-    (genius
-     "https://genius.com/artist-name-song-name-lyrics"
-     ?- "div.lyrics p")
-    (songlyrics
-     "http://www.songlyrics.com/artist-name/song-name-lyrics/"
-     ?- /n)
-    (metrolyrics
-     "http://www.metrolyrics.com/~song-name-lyrics-~artist-name.html"
-     ?- "p.verse")
-    (musixmatch
-     "https://www.musixmatch.com/lyrics/artist-name/song-name"
-     ?- "p.mxm-lyrics__content")
-    (azlyrics
-     "https://www.azlyrics.com/lyrics/artist-name/song-name.html"
-     nil "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")))
-
-(defconst genius-resp nil)
-(defconst songlyrics-resp nil)
-
 (defun my-elquery-read-string (string)
-  "Return the AST of the HTML string STRING as a plist."
+  "Like the original elquery-read-string, but don't remove spaces."
   (with-temp-buffer
-    (set-buffer-multibyte nil) ; ref debbugs.gnu.org/cgi/bugreport.cgi?bug=31427
+    (set-buffer-multibyte nil)
     (insert string)
     (let ((tree (libxml-parse-html-region (point-min) (point-max))))
       (thread-last tree
         (elquery--parse-libxml-tree nil)))))
 
-(request "https://genius.com/anathema-thin-air-lyrics"
-         ;;"http://www.songlyrics.com/anathema/thin-air-lyrics/"
-         :parser 'buffer-string
-         :success (cl-function
-                   (lambda (&key data &allow-other-keys)
-                     (setq genius-resp data))))
+(defconst lyrics-websites nil)
 
-(elquery-text
- (cl-first (elquery-$ "p#songLyricsDiv"
-                      (elquery-read-string songlyrics-resp t))))
+(cl-defstruct lyrics-website
+  name template separator query)
 
-(elquery-text
- (cl-first (elquery-$ "div.lyrics p"
-                      (my-elquery-read-string genius-resp))))
+(defun add-lyrics-website (name template separator query)
+  (let ((new-website (make-lyrics-website
+                      :name name
+                      :template template         
+                      :separator separator
+                      :query query)))
+    ;; Replace the entry if there is already a website with the same name.
+    (aif (cl-position name lyrics-websites
+                      :test (lambda (a b) (equal a b))
+                      :key #'lyrics-website-name)
+        (setf (nth it lyrics-websites) new-website)
+      ;; Freshly add it, otherwise.
+      (push new-website lyrics-websites))))
 
-(with-temp-buffer
-  (insert genius-resp)
-  (libxml-parse-html-region (buffer-end -1) (buffer-end 1)))
+(defun lyrics-website (name)
+  "Find a lyrics website from the list of known websites."
+  (cl-find-if (lambda (w)
+                (equal w name))
+              lyrics-websites
+              :key #'lyrics-website-name))
 
+(defun random-lyrics-website ()
+  (nth (random (length lyrics-websites))
+       lyrics-websites))
 
+(add-lyrics-website "makeitpersonal"
+  "https://makeitpersonal.co/lyrics?artist=${artist}&title=${song}"
+  "-" nil)
+
+(add-lyrics-website "genius"
+  "https://genius.com/${artist}-${song}-lyrics"
+  "-" "div.lyrics p")
+
+(add-lyrics-website "songlyrics"
+  "http://www.songlyrics.com/${artist}/${song}-lyrics/"
+  "-" "p#songLyricsDiv")
+
+(add-lyrics-website "metrolyrics"
+  "http://www.metrolyrics.com/~${song}-lyrics-~${artist}.html"
+  "-" "p.verse")
+
+(add-lyrics-website "musixmatch"
+  "https://www.musixmatch.com/lyrics/${artist}/${song}"
+  "-" "p.mxm-lyrics__content")
+
+(add-lyrics-website "azlyrics"
+  "https://www.azlyrics.com/lyrics/${artist}/${song}.html"
+  "-" "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")
+
+(defun build-url (website artist song)
+  (let ((sep (lyrics-website-separator website)))
+    (s-format (lyrics-website-template website)
+              'aget
+              `(("artist" . ,(s-replace " " sep artist))
+                ("song"   . ,(s-replace " " sep song))))))
+
+(defun request-lyrics (artist song &optional website)
+  (or (get-lyrics artist song)          ;from db, if it exists.
+      ;; Either use the specified website, if it exists, or pick a random one.
+      (let ((website (if website
+                         (aif (lyrics-website website)
+                             it
+                           (error "No such website in the database."))
+                       (random-lyrics-website)))
+            (response))
+        (request (build-url website artist song)
+                 :parser 'buffer-string
+                 :sync t
+                 :success (cl-function
+                           (lambda (&key data &allow-other-keys)
+                             (setf response data))))        
+        (when response
+          (elquery-text
+           (cl-first (elquery-$ (lyrics-website-query website)
+                                (my-elquery-read-string response))))))))
