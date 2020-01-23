@@ -8,54 +8,57 @@
 (require 's)
 (require 'esqlite)
 
-(defconst db (esqlite-stream-open "~/Downloads/cl-lyrics.db"))
-(defconst *socket* "/tmp/mpv-cl-socket")
+(defconst lyrics-db (esqlite-stream-open "~/Downloads/cl-lyrics.db"))
 
 (defun mappend (fn list)
   (apply #'append (mapcar fn list)))
 
 (defun lyrics-db-read (query)
-  (esqlite-stream-read db query))
+  (esqlite-stream-read lyrics-db query))
 
-(defun get-lyrics (artist song)
+(defun db-get-lyrics (artist song)
+  (aif (lyrics-db-read
+        (format "SELECT lyrics FROM lyrics WHERE artist=\"%s\" AND song=\"%s\""
+                artist song))
+      (cl-first (cl-first it))))
+
+(defun db-get-lyrics-like (str)
   (lyrics-db-read
-   (format "SELECT lyrics FROM lyrics WHERE artist=\"%s\" AND song=\"%s\""
-           artist song)))
+   (format "SELECT * from lyrics WHERE lyrics like '%% %s %%'" str)))
 
-(defun search-song (query-str)
+(defun db-save-lyrics (artist song lyrics)
+  (esqlite-stream-execute lyrics-db
+   (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
+           artist song lyrics)))
+
+(defun search-song (str)
   "Query the database for all the lyrics lines that match the
-`query-str'. For each match, return that verse line together with
+`str'. For each match, return that verse line together with
 the artist and song name."
-  (let* ((raw-songs (lyrics-db-read
-                     (concat "SELECT * from lyrics WHERE lyrics like '%"
-                             query-str "%'"))))
-    ;; raw-songs, as received from the db, contains all the info there is for
-    ;; one entry in the lyrics db. That means, it contains the whole
-    ;; lyrics. We're interested in just the line where the match occurs. 
-    (cl-remove-duplicates
-     (mappend (lambda (song)
-                ;; Only keep the matches. Unmached regexes will return nil.
-                (cl-remove-if #'null                                        
-                 (mapcar (lambda (line)
-                      (let ((full-line
-                             ;; Get the whole line that matches the query-str
-                             (cl-first (s-match (concat ".*"
-                                                        query-str ".*")
-                                                        line))))
-                        (unless (null full-line)
-                          ;; Add the artist and song name to the matched line.
-                          (list (concat (cl-second song) " | "
-                                        (cl-third song)  " | "
-                                        full-line)
-                                (cl-second song)
-                                (cl-third song)))))
-                    ;; For each lyrics line for the current entry in the db.
-                    (s-lines (cl-fourth song)))))
-              ;; For each entry in the db.
-              raw-songs)
-     ;; No need to keep identical entries
-     :test (lambda (a b)
-             (string= (cl-first a) (cl-first b))))))
+  (cl-remove-duplicates
+   (mappend (lambda (song)
+              ;; Only keep the matches. Unmached regexes will return nil.
+              (cl-remove-if #'null                                        
+                            (mapcar (lambda (line)
+                                      (let ((full-line
+                                             ;; Get the whole line that matches the str
+                                             (cl-first (s-match (concat ".*"
+                                                                        str ".*")
+                                                                line))))
+                                        (unless (null full-line)
+                                          ;; Add the artist and song name to the matched line.
+                                          (list (concat (cl-second song) " | "
+                                                        (cl-third song)  " | "
+                                                        full-line)
+                                                (cl-second song)
+                                                (cl-third song)))))
+                                    ;; For each lyrics line for the current entry in the db.
+                                    (s-lines (cl-fourth song)))))
+            ;; For each entry in the db.
+            (db-get-lyrics-like str))
+   ;; No need to keep identical entries
+   :test (lambda (a b)
+           (string= (cl-first a) (cl-first b)))))
 
 (defun lyrics-lyrics (query-str)
   "Select and return an entry from the lyrics db."
@@ -64,7 +67,6 @@ the artist and song name."
     (ivy-read "Select Lyrics: "
             (search-song query-str)
             :action (lambda (song)
-                      (print song)
                       (setf res (concat (cl-second song) " "
                                         (cl-third song)))))
     res))
@@ -143,22 +145,35 @@ the artist and song name."
               `(("artist" . ,(s-replace " " sep artist))
                 ("song"   . ,(s-replace " " sep song))))))
 
-(defun request-lyrics (artist song &optional website)
-  (or (get-lyrics artist song)          ;from db, if it exists.
-      ;; Either use the specified website, if it exists, or pick a random one.
-      (let ((website (if website
-                         (aif (lyrics-website website)
-                             it
-                           (error "No such website in the database."))
-                       (random-lyrics-website)))
-            (response))
-        (request (build-url website artist song)
-                 :parser 'buffer-string
-                 :sync t
-                 :success (cl-function
-                           (lambda (&key data &allow-other-keys)
-                             (setf response data))))        
-        (when response
-          (elquery-text
-           (cl-first (elquery-$ (lyrics-website-query website)
-                                (my-elquery-read-string response))))))))
+(defun request-lyrics (website artist song callback)
+  (let (resp)
+    (request (build-url website artist song)
+           :parser 'buffer-string
+           :sync nil
+           :success (cl-function
+                     (lambda (&key data &allow-other-keys)
+                       (funcall callback data)))))
+  nil)
+
+(defun parse-lyrics (website html)
+  (let* ((css (lyrics-website-query website))
+         (parsed (elquery-$ css (my-elquery-read-string html)))
+         (lyrics (elquery-text (cl-first parsed))))
+    lyrics))
+
+(defun display-lyrics (artist song)
+  (if-let ((lyrics (db-get-lyrics artist song)))
+      (let ((b (generate-new-buffer
+                (format "%s - %s | lyrics" artist song))))
+        (with-current-buffer b
+          (insert (format "%s - %s\n\n" artist song))
+          (insert lyrics))
+        (switch-to-buffer b))
+    (let ((website (lyrics-website "genius")))
+      (request-lyrics
+       website artist song
+       (lambda (resp)
+         (let ((lyrics (parse-lyrics website html)))           
+           (db-save-lyrics artist song lyrics)
+           (display-lyrics artist song)))))))
+
