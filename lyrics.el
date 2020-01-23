@@ -31,34 +31,27 @@
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
            artist song lyrics)))
 
+(defun build-ivy-entryline (verse song str)
+  ;; Get the whole line that matches the str
+  (if-let ((full-line (cl-first
+                       (s-match (format ".*%s.*" str) verse))))
+      (list (format "%s | %s | %s" (cl-second song)
+                    (cl-third song)
+                    full-line)
+            (cl-second song)
+            (cl-third song))))
+
 (defun search-song (str)
   "Query the database for all the lyrics lines that match the
 `str'. For each match, return that verse line together with
 the artist and song name."
-  (cl-remove-duplicates
-   (mappend (lambda (song)
-              ;; Only keep the matches. Unmached regexes will return nil.
-              (cl-remove-if #'null                                        
-                            (mapcar (lambda (line)
-                                      (let ((full-line
-                                             ;; Get the whole line that matches the str
-                                             (cl-first (s-match (concat ".*"
-                                                                        str ".*")
-                                                                line))))
-                                        (unless (null full-line)
-                                          ;; Add the artist and song name to the matched line.
-                                          (list (concat (cl-second song) " | "
-                                                        (cl-third song)  " | "
-                                                        full-line)
-                                                (cl-second song)
-                                                (cl-third song)))))
-                                    ;; For each lyrics line for the current entry in the db.
-                                    (s-lines (cl-fourth song)))))
-            ;; For each entry in the db.
-            (db-get-lyrics-like str))
-   ;; No need to keep identical entries
-   :test (lambda (a b)
-           (string= (cl-first a) (cl-first b)))))
+   (seq-uniq
+    (seq-remove #'null
+     (mappend (lambda (song)
+                (mapcar (lambda (verse)
+                     (build-ivy-entryline verse song str))
+                   (s-lines (cl-fourth song))))
+              (db-get-lyrics-like str)))))
 
 (defun lyrics-lyrics (query-str)
   "Select and return an entry from the lyrics db."
