@@ -1,6 +1,7 @@
 ;;; lyrics.el --- Playing with lyrics -*- lexical-binding: t -*-
 
 (require 'cl-lib)
+(require 'dash)
 (require 'request)
 (require 'elquery)
 (require 's)
@@ -155,7 +156,10 @@ the artist and song name."
            :sync nil
            :success (cl-function
                      (lambda (&key data &allow-other-keys)
-                       (funcall callback data)))))
+                       (funcall callback data)))
+           :error (cl-function
+                   (lambda (&key data &allow-other-keys)
+                     (funcall callback nil)))))
   nil)
 
 (defun parse-lyrics (website html)
@@ -175,19 +179,31 @@ the artist and song name."
        parsed)
     lyrics))
 
-(defun display-lyrics (artist song)
-  (if-let ((lyrics (db-get-lyrics artist song)))
-      (let ((b (generate-new-buffer
-                (format "%s - %s | lyrics" artist song))))
-        (with-current-buffer b
-          (insert (format "%s - %s\n\n" artist song))
-          (insert lyrics))
-        (switch-to-buffer b))
-    (let ((website (lyrics-website "genius")))
-      (request-lyrics
-       website artist song
-       (lambda (resp)
-         (let ((lyrics (parse-lyrics website resp)))
-           (db-save-lyrics artist song lyrics)
-           (display-lyrics artist song)))))))
+(cl-defun display-lyrics (artist song &optional (websites lyrics-websites))
+  "By default, the function starts with all the known
+websites. To avoid getting banned, I take a random website on
+every request. If the lyrics is not found on that website, remove
+it from the list and try again with another random website from
+the remaining list."
+  (when websites
+    (if-let ((lyrics (db-get-lyrics artist song)))
+        (let ((b (generate-new-buffer
+                  (format "%s - %s | lyrics" artist song))))
+          (with-current-buffer b
+            (insert (format "%s - %s\n\n" artist song))
+            (insert lyrics))
+          (switch-to-buffer b))
+      (let ((website (random-lyrics-website)))
+        (request-lyrics website artist song
+         (lambda (resp)
+           (if (and resp
+                    ;; makeitpersonal
+                    (not (s-contains? "Sorry, We don't have lyrics" resp)))
+               (let ((lyrics (parse-lyrics website resp)))
+                 (when lyrics
+                   (db-save-lyrics artist song lyrics)
+                   (display-lyrics artist song)))
+             ;; Lyrics not found, try another website.
+             (display-lyrics artist song
+                             (-remove-item website lyrics-websites)))))))))
 
