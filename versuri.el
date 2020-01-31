@@ -3,18 +3,28 @@
 (require 'cl-lib)
 (require 'request)
 (require 'elquery)
-(require 'mpv)
-(require 'ivy-youtube)
 (require 's)
 (require 'esqlite)
 
-(defconst lyrics-db (esqlite-stream-open "~/Downloads/cl-lyrics.db"))
+(defconst versuri--db-stream
+  (let ((db (concat (xdg-config-home) "/versurii.db")))    
+    (esqlite-execute db   
+     (concat "CREATE TABLE IF NOT EXISTS lyrics ("
+             "id     INTEGER PRIMARY KEY AUTOINCREMENT "
+             "               UNIQUE "
+             "               NOT NULL, "
+             "artist TEXT    NOT NULL "
+             "               COLLATE NOCASE, "
+             "song   TEXT    NOT NULL "
+             "               COLLATE NOCASE, "
+             "lyrics TEXT    COLLATE NOCASE);"))
+    (esqlite-stream-open db)))
 
 (defun mappend (fn list)
   (apply #'append (mapcar fn list)))
 
 (defun lyrics-db-read (query)
-  (esqlite-stream-read lyrics-db query))
+  (esqlite-stream-read versuri--db-stream query))
 
 (defun db-get-lyrics (artist song)
   (aif (lyrics-db-read
@@ -27,7 +37,7 @@
    (format "SELECT * from lyrics WHERE lyrics like '%% %s %%'" str)))
 
 (defun db-save-lyrics (artist song lyrics)
-  (esqlite-stream-execute lyrics-db
+  (esqlite-stream-execute versuri--db-stream
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
            artist song lyrics)))
 
@@ -109,7 +119,7 @@ the artist and song name."
 
 (add-lyrics-website "makeitpersonal"
   "https://makeitpersonal.co/lyrics?artist=${artist}&title=${song}"
-  "-" nil)
+  "-" "p")
 
 (add-lyrics-website "genius"
   "https://genius.com/${artist}-${song}-lyrics"
@@ -120,16 +130,16 @@ the artist and song name."
   "-" "p#songLyricsDiv")
 
 (add-lyrics-website "metrolyrics"
-  "http://www.metrolyrics.com/~${song}-lyrics-~${artist}.html"
+  "http://www.metrolyrics.com/${song}-lyrics-${artist}.html"
   "-" "p.verse")
 
 (add-lyrics-website "musixmatch"
   "https://www.musixmatch.com/lyrics/${artist}/${song}"
-  "-" "p.mxm-lyrics__content")
+  "-" "p.mxm-lyrics__content span")
 
 (add-lyrics-website "azlyrics"
   "https://www.azlyrics.com/lyrics/${artist}/${song}.html"
-  "-" "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")
+  "" "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")
 
 (defun build-url (website artist song)
   (let ((sep (lyrics-website-separator website)))
@@ -151,7 +161,18 @@ the artist and song name."
 (defun parse-lyrics (website html)
   (let* ((css (lyrics-website-query website))
          (parsed (elquery-$ css (my-elquery-read-string html)))
-         (lyrics (elquery-text (cl-first parsed))))
+         (lyrics))
+    ;; Some lyrics are split into multiple elements (musixmatch), otherwise, an
+    ;; (elquery-text (car el)) would have been enough.
+    (mapcar (lambda (el)
+         (let ((text (elquery-text el)))
+           (setf lyrics (concat                         
+                         (if (equal (lyrics-website-name website) "songlyrics")
+                             (s-replace "" "" text)
+                           text)
+                         "\n\n"
+                         lyrics))))
+       parsed)
     lyrics))
 
 (defun display-lyrics (artist song)
@@ -166,7 +187,7 @@ the artist and song name."
       (request-lyrics
        website artist song
        (lambda (resp)
-         (let ((lyrics (parse-lyrics website html)))           
+         (let ((lyrics (parse-lyrics website resp)))
            (db-save-lyrics artist song lyrics)
            (display-lyrics artist song)))))))
 
