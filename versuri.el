@@ -8,8 +8,8 @@
 (require 'esqlite)
 
 (defconst versuri--db-stream
-  (let ((db (concat (xdg-config-home) "/versurii.db")))    
-    (esqlite-execute db   
+  (let ((db (concat (xdg-config-home) "/versuri.db")))
+    (esqlite-execute db
      (concat "CREATE TABLE IF NOT EXISTS lyrics ("
              "id     INTEGER PRIMARY KEY AUTOINCREMENT "
              "               UNIQUE "
@@ -19,25 +19,31 @@
              "song   TEXT    NOT NULL "
              "               COLLATE NOCASE, "
              "lyrics TEXT    COLLATE NOCASE);"))
-    (esqlite-stream-open db)))
+    (esqlite-stream-open db))
+  "The storage place of all succesfully retrieved lyrics.")
 
-(defun mappend (fn list)
+(defun versuri--mappend (fn list)
+  "Map `fn' on elements in `list' and append the resulted lists."
   (apply #'append (mapcar fn list)))
 
-(defun lyrics-db-read (query)
+(defun versuri--db-read (query)
+  "Call the `query' on the database and return the result."
   (esqlite-stream-read versuri--db-stream query))
 
-(defun db-get-lyrics (artist song)
-  (aif (lyrics-db-read
+(defun versuri--db-get-lyrics (artist song)
+  "Retrieve the stored lyrics for `artist' and `song'."
+  (aif (versuri--db-read
         (format "SELECT lyrics FROM lyrics WHERE artist=\"%s\" AND song=\"%s\""
                 artist song))
-      (cl-first (cl-first it))))
+      (car (car it))))
 
-(defun db-get-lyrics-like (str)
-  (lyrics-db-read
+(defun versuri--db-search-lyrics-like (str)
+  "Retrieve all entries that contain lyrics like `str'."
+  (versuri--db-read
    (format "SELECT * from lyrics WHERE lyrics like '%% %s %%'" str)))
 
-(defun db-save-lyrics (artist song lyrics)
+(defun versuri--db-save-lyrics (artist song lyrics)
+  "Save the `lyrics' for `artist' and `song' in the database."
   (esqlite-stream-execute versuri--db-stream
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
            artist song lyrics)))
@@ -46,30 +52,31 @@
   ;; Get the whole line that matches the str
   (if-let ((full-line (cl-first
                        (s-match (format ".*%s.*" str) verse))))
-      (list (format "%s | %s | %s" (cl-second song)
-                    (cl-third song)
-                    full-line)
-            (cl-second song)
-            (cl-third song))))
+      (list (format "%-15s | %-15s | %s"
+                    (cadr song) (caddr song) full-line)
+            (cadr song)
+            (caddr song))))
 
-(defun search-song (str)
-  "Query the database for all the lyrics lines that match the
-`str'. For each match, return that verse line together with
-the artist and song name."
-   (seq-uniq
-    (seq-remove #'null
-     (mappend (lambda (song)
-                (mapcar (lambda (verse)
-                     (build-ivy-entryline verse song str))
-                   (s-lines (cl-fourth song))))
-              (db-get-lyrics-like str)))))
+(defun versuri--db-search-songs (str)
+  "Search all stored lyrics that that match `str'. 
+For each match, return the matched line together with the artist
+and song name."
+  (seq-uniq
+   (seq-remove #'null
+    (versuri--mappend (lambda (song)
+                        (mapcar (lambda (verse)
+                             (build-ivy-entryline verse song str))
+                           (s-lines (cl-fourth song))))
+                      (versuri--db-search-lyrics-like str)))))
+
+(versuri--db-search-lyrics-like "free")
 
 (defun lyrics-lyrics (query-str)
   "Select and return an entry from the lyrics db."
   (interactive "MSearch lyrics: ")
   (let (res)
     (ivy-read "Select Lyrics: "
-            (search-song query-str)
+            (versuri--db-search-songs query-str)
             :action (lambda (song)
                       (setf res (concat (cl-second song) " "
                                         (cl-third song)))))
@@ -184,7 +191,7 @@ Call `callback' with the result or with nil in case of error."
 websites. To avoid getting banned, I take a random website on
 every request. If the lyrics is not found on that website, repeat
 the call with the remaining websites."
-  (if-let (lyrics (db-get-lyrics artist song))      
+  (if-let (lyrics (db-get-lyrics artist song))
       (funcall callback lyrics)
     (when-let (website (nth (random (length websites))
                             lyrics-websites))        
@@ -195,7 +202,7 @@ the call with the remaining websites."
                      (not (s-contains? "Sorry, We don't have lyrics" resp)))
                 ;; Positive response
                 (when-let (lyrics (parse-response website resp))
-                  (db-save-lyrics artist song lyrics)                  
+                  (versuri--db-save-lyrics artist song lyrics)                  
                   (get-lyrics artist song callback))
               ;; Lyrics not found, try another website.
               (get-lyrics artist song callback
