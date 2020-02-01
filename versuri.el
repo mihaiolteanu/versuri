@@ -114,10 +114,6 @@ the artist and song name."
               lyrics-websites
               :key #'lyrics-website-name))
 
-(defun random-lyrics-website ()
-  (nth (random (length lyrics-websites))
-       lyrics-websites))
-
 (add-lyrics-website "makeitpersonal"
   "https://makeitpersonal.co/lyrics?artist=${artist}&title=${song}"
   "-" "p")
@@ -149,7 +145,9 @@ the artist and song name."
               `(("artist" . ,(s-replace " " sep artist))
                 ("song"   . ,(s-replace " " sep song))))))
 
-(defun request-lyrics (website artist song callback)
+(defun request-website (website artist song callback)
+  "Request the lyrics `website' for `artist' and `song'.
+Call `callback' with the result or with nil in case of error."
   (let (resp)
     (request (build-url website artist song)
            :parser 'buffer-string
@@ -162,16 +160,18 @@ the artist and song name."
                      (funcall callback nil)))))
   nil)
 
-(defun parse-lyrics (website html)
+(defun parse-response (website html)
   (let* ((css (lyrics-website-query website))
          (parsed (elquery-$ css (my-elquery-read-string html)))
          (lyrics))
     ;; Some lyrics are split into multiple elements (musixmatch), otherwise, an
-    ;; (elquery-text (car el)) would have been enough.
+    ;; (elquery-text (car el)) would have been enough, which is basically what
+    ;; happens if there is only one element, anyway.
     (mapcar (lambda (el)
          (let ((text (elquery-text el)))
            (setf lyrics (concat                         
                          (if (equal (lyrics-website-name website) "songlyrics")
+                             ;; Songlyrics adds <br> elements after each line.
                              (s-replace "" "" text)
                            text)
                          "\n\n"
@@ -179,31 +179,48 @@ the artist and song name."
        parsed)
     lyrics))
 
-(cl-defun display-lyrics (artist song &optional (websites lyrics-websites))
+(cl-defun get-lyrics (artist song callback &optional (websites lyrics-websites))
   "By default, the function starts with all the known
 websites. To avoid getting banned, I take a random website on
-every request. If the lyrics is not found on that website, remove
-it from the list and try again with another random website from
-the remaining list."
-  (when websites
-    (if-let ((lyrics (db-get-lyrics artist song)))
-        (let ((b (generate-new-buffer
-                  (format "%s - %s | lyrics" artist song))))
-          (with-current-buffer b
-            (insert (format "%s - %s\n\n" artist song))
-            (insert lyrics))
-          (switch-to-buffer b))
-      (let ((website (random-lyrics-website)))
-        (request-lyrics website artist song
-         (lambda (resp)
-           (if (and resp
-                    ;; makeitpersonal
-                    (not (s-contains? "Sorry, We don't have lyrics" resp)))
-               (let ((lyrics (parse-lyrics website resp)))
-                 (when lyrics
-                   (db-save-lyrics artist song lyrics)
-                   (display-lyrics artist song)))
-             ;; Lyrics not found, try another website.
-             (display-lyrics artist song
-                             (-remove-item website lyrics-websites)))))))))
+every request. If the lyrics is not found on that website, repeat
+the call with the remaining websites."
+  (if-let (lyrics (db-get-lyrics artist song))      
+      (funcall callback lyrics)
+    (when-let (website (nth (random (length websites))
+                            lyrics-websites))        
+        (request-website website artist song
+          (lambda (resp)
+            (if (and resp
+                     ;; makeitpersonal
+                     (not (s-contains? "Sorry, We don't have lyrics" resp)))
+                ;; Positive response
+                (when-let (lyrics (parse-response website resp))
+                  (db-save-lyrics artist song lyrics)                  
+                  (get-lyrics artist song callback))
+              ;; Lyrics not found, try another website.
+              (get-lyrics artist song callback
+                          (-remove-item website lyrics-websites))))))))
+
+(defun display-lyrics-in-buffer (artist song)
+  (get-lyrics artist song
+    (lambda (lyrics)
+      (let ((name (format "%s - %s | lyrics" artist song)))
+        (aif (get-buffer name)
+            (switch-to-buffer it)
+          (let ((b (generate-new-buffer name)))
+            (with-current-buffer b
+              (insert (format "%s - %s\n\n" artist song))
+              (insert lyrics)
+              (read-only-mode)
+              (local-set-key (kbd "q") 'kill-current-buffer))
+            (switch-to-buffer b)))))))
+
+(defun save-lyrics (artist song)
+  (get-lyrics artist song #'ignore))
+
+(defun bulk-request-sync (songs max-timeout)
+  (dolist (song songs)
+    (save-lyrics (car song) (cadr song))
+    (sleep-for (random max-timeout))))
+
 
