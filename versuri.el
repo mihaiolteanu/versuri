@@ -1,4 +1,4 @@
-;;; lyrics.el --- Playing with lyrics -*- lexical-binding: t -*-
+;;; versuri.el --- Playing with lyrics -*- lexical-binding: t -*-
 
 (require 'cl-lib)
 (require 'dash)
@@ -115,12 +115,18 @@ lyrics."
                (setf res (list (cadr song) (caddr song)))))
     res))
 
-;;;; Get the lyrics with elquery
-;; elquery-read-string removes all newlines (issue on github created but no
-;; response), so I've defined a new one, but this uses an internal elquery defun
+(defun versuri--elquery-read-string (string)
+  "Like the original elquery-read-string, but don't remove spaces.
 
-(defun my-elquery-read-string (string)
-  "Like the original elquery-read-string, but don't remove spaces."
+The original elquery-read-string removes all newlines (issue on
+github created), which means all the parsed lyrics are returned
+in one giant string with no way of knowing where one line ends
+and the other one begins. The solution in this defun uses an
+internal elquery function, which might be a problem in the
+future.
+
+Also, the original function does not parse utf8 chars (issue on
+github also created). (set-buffer-multibyte nil) solves it."
   (with-temp-buffer
     (set-buffer-multibyte nil)
     (insert string)
@@ -128,68 +134,86 @@ lyrics."
       (thread-last tree
         (elquery--parse-libxml-tree nil)))))
 
-(defconst lyrics-websites nil)
+(defconst versuri--websites nil
+  "A list of all the websites where lyrics can be searched.")
 
-(cl-defstruct lyrics-website
+(cl-defstruct versuri--website
   name template separator query)
 
-(defun add-lyrics-website (name template separator query)
-  (let ((new-website (make-lyrics-website
+(defun versuri-add-website (name template separator query)
+  "Define a new website where lyrics can be searched.
+If a website with the given `name' already exists, replace it. If
+not, use the `name', `template' `separator' and `query' to define
+a new lyrics website structure and add it to the list of known
+websites for lyrics searches. 
+
+`name' is a user-friendly name of the website.
+
+`template' is the website url with placeholders for ${artist} and
+${song}. Replacing these templates with actual artist and song
+names results in a valid url that can be used to return the
+lyrics.
+
+`separator' is used in conjunction with `template' to build the
+requested url. The empty spaces in the artist and song name are
+replaced with `separator's. Some websites use dashes, others plus
+signs, for example.
+
+`query' is used in the parsing phase of the html response. It
+specifies the css selectors used by elquery to extract the lyrics
+part of the html page."
+  (let ((new-website (make-versuri--website
                       :name name
                       :template template         
                       :separator separator
                       :query query)))
     ;; Replace the entry if there is already a website with the same name.
-    (aif (cl-position name lyrics-websites
-                      :test (lambda (a b) (equal a b))
-                      :key #'lyrics-website-name)
-        (setf (nth it lyrics-websites) new-website)
+    (aif (cl-position name versuri--websites
+                      :test #'equal
+                      :key #'versuri--website-name)
+        (setf (nth it versuri--websites) new-website)
       ;; Freshly add it, otherwise.
-      (push new-website lyrics-websites))))
+      (push new-website versuri--websites))))
 
-(defun lyrics-website (name)
-  "Find a lyrics website from the list of known websites."
-  (cl-find-if (lambda (w)
-                (equal w name))
-              lyrics-websites
-              :key #'lyrics-website-name))
-
-(add-lyrics-website "makeitpersonal"
+(versuri-add-website "makeitpersonal"
   "https://makeitpersonal.co/lyrics?artist=${artist}&title=${song}"
   "-" "p")
 
-(add-lyrics-website "genius"
+(versuri-add-website "genius"
   "https://genius.com/${artist}-${song}-lyrics"
   "-" "div.lyrics p")
 
-(add-lyrics-website "songlyrics"
+(versuri-add-website "songlyrics"
   "http://www.songlyrics.com/${artist}/${song}-lyrics/"
   "-" "p#songLyricsDiv")
 
-(add-lyrics-website "metrolyrics"
+(versuri-add-website "metrolyrics"
   "http://www.metrolyrics.com/${song}-lyrics-${artist}.html"
   "-" "p.verse")
 
-(add-lyrics-website "musixmatch"
+(versuri-add-website "musixmatch"
   "https://www.musixmatch.com/lyrics/${artist}/${song}"
   "-" "p.mxm-lyrics__content span")
 
-(add-lyrics-website "azlyrics"
+(versuri-add-website "azlyrics"
   "https://www.azlyrics.com/lyrics/${artist}/${song}.html"
   "" "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")
 
-(defun build-url (website artist song)
-  (let ((sep (lyrics-website-separator website)))
-    (s-format (lyrics-website-template website)
+(defun versuri--build-url (website artist song)
+  "Use the `website' definition to build a valid url.
+`artist' and `song' are replaced in the `website' template."
+  (let ((sep (versuri--website-separator website)))
+    (s-format (versuri--website-template website)
               'aget
               `(("artist" . ,(s-replace " " sep artist))
                 ("song"   . ,(s-replace " " sep song))))))
 
-(defun request-website (website artist song callback)
-  "Request the lyrics `website' for `artist' and `song'.
-Call `callback' with the result or with nil in case of error."
+(defun versuri--request (website artist song callback)
+  "Request the lyrics for `artist' and `song' at `website'.
+`callback' is called with the response data or with nil in case
+of an error."
   (let (resp)
-    (request (build-url website artist song)
+    (request (versuri--build-url website artist song)
            :parser 'buffer-string
            :sync nil
            :success (cl-function
@@ -200,9 +224,10 @@ Call `callback' with the result or with nil in case of error."
                      (funcall callback nil)))))
   nil)
 
-(defun parse-response (website html)
-  (let* ((css (lyrics-website-query website))
-         (parsed (elquery-$ css (my-elquery-read-string html)))
+(defun versuri--parse (website html)
+  "Use the `website' definition to parse the `html' response."
+  (let* ((css (versuri--website-query website))
+         (parsed (elquery-$ css (versuri--elquery-read-string html)))
          (lyrics))
     ;; Some lyrics are split into multiple elements (musixmatch), otherwise, an
     ;; (elquery-text (car el)) would have been enough, which is basically what
@@ -210,7 +235,8 @@ Call `callback' with the result or with nil in case of error."
     (mapcar (lambda (el)
          (let ((text (elquery-text el)))
            (setf lyrics (concat                         
-                         (if (equal (lyrics-website-name website) "songlyrics")
+                         (if (equal (versuri--website-name website)
+                                    "songlyrics")
                              ;; Songlyrics adds <br> elements after each line.
                              (s-replace "" "" text)
                            text)
@@ -219,30 +245,39 @@ Call `callback' with the result or with nil in case of error."
        parsed)
     lyrics))
 
-(cl-defun get-lyrics (artist song callback &optional (websites lyrics-websites))
-  "By default, the function starts with all the known
-websites. To avoid getting banned, I take a random website on
+(cl-defun versuri-lyrics
+    (artist song callback &optional (websites versuri--websites))
+  "Call `callback' with the lyrics for `artist' and `song'.
+
+If the lyrics is found in the database, use that.
+there. Otherwise, search through `websites' for them. If found,
+save them to the database and recursivelly call this function
+again. The `callback' is needed since the requests are async.
+
+By default, `websites' is bound to the list of all the known
+websites. To avoid getting banned, a random website is taken on
 every request. If the lyrics is not found on that website, repeat
 the call with the remaining websites."
-  (if-let (lyrics (db-get-lyrics artist song))
+  (if-let (lyrics (versuri--db-get-lyrics artist song))
       (funcall callback lyrics)
     (when-let (website (nth (random (length websites))
-                            lyrics-websites))        
-        (request-website website artist song
+                            websites))
+        (versuri--request website artist song
           (lambda (resp)
             (if (and resp
                      ;; makeitpersonal
                      (not (s-contains? "Sorry, We don't have lyrics" resp)))
                 ;; Positive response
-                (when-let (lyrics (parse-response website resp))
+                (when-let (lyrics (versuri--parse website resp))
                   (versuri--db-save-lyrics artist song lyrics)                  
-                  (get-lyrics artist song callback))
+                  (versuri-lyrics artist song callback))
               ;; Lyrics not found, try another website.
-              (get-lyrics artist song callback
-                          (-remove-item website lyrics-websites))))))))
+              (versuri-lyrics artist song callback
+                              (-remove-item website websites))))))))
 
-(defun display-lyrics-in-buffer (artist song)
-  (get-lyrics artist song
+(defun versuri-lyrics-display (artist song)
+  "Display the lyrics for `artist' and `song' in a new buffer."
+  (versuri-lyrics artist song
     (lambda (lyrics)
       (let ((name (format "%s - %s | lyrics" artist song)))
         (aif (get-buffer name)
@@ -255,12 +290,21 @@ the call with the remaining websites."
               (local-set-key (kbd "q") 'kill-current-buffer))
             (switch-to-buffer b)))))))
 
-(defun save-lyrics (artist song)
-  (get-lyrics artist song #'ignore))
+(defun versuri-save-lyrics (artist song)
+  "Save the lyrics for `artist' and `song' in the database."
+  (versuri-lyrics artist song #'ignore))
 
-(defun bulk-request-sync (songs max-timeout)
+(defun versuri-save-request-lyrics (songs max-timeout)
+  "Save the lyrics for all `songs'.
+`songs' is a list of '(\"artist\" \"song\") lists.
+To avoid getting banned by the lyrics websites, wait a maximum of
+`max-timeout' seconds between requests.
+
+!!!This is a sync request!!! Depending on the number of entries
+in the `songs' list, it can take a while. In the meantime, Emacs
+will be blocked. Better use it while you go for a coffee break. "
   (dolist (song songs)
     (save-lyrics (car song) (cadr song))
     (sleep-for (random max-timeout))))
 
-
+(provide 'versuri)
