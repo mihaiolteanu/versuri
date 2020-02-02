@@ -22,10 +22,6 @@
     (esqlite-stream-open db))
   "The storage place of all succesfully retrieved lyrics.")
 
-(defun versuri--mappend (fn list)
-  "Map `fn' on elements in `list' and append the resulted lists."
-  (apply #'append (mapcar fn list)))
-
 (defun versuri--db-read (query)
   "Call the `query' on the database and return the result."
   (esqlite-stream-read versuri--db-stream query))
@@ -38,13 +34,15 @@
       (car (car it))))
 
 (defun versuri--db-search-lyrics-like (str)
-  "Retrieve all entries that contain lyrics like `str'."
+  "Retrieve all entries that contain lyrics like `str'.
+Only take into consideration complete words."
   (versuri--db-read
    (format "SELECT * from lyrics WHERE lyrics like '%% %s %%'" str)))
 
-(defun versuri--db-artists (artist)
+(defun versuri--db-artists-like (artist)
+  "Retrieve all entries that contain artists like `artist'."
   (versuri--db-read
-   (format "SELECT * from lyrics WHERE artist=\"%s\"" artist)))
+   (format "SELECT * from lyrics WHERE artist like '%%%s%%'" artist)))
 
 (defun versuri--db-all-entries ()
   (versuri--db-read "SELECT * from lyrics"))
@@ -62,7 +60,7 @@ and song name."
   (let ((entries (cond ((s-blank? (s-trim str))
                         (versuri--db-all-entries))
                        ((s-equals-p " " (substring str 0 1))
-                        (versuri--db-artists (s-trim str)))
+                        (versuri--db-artists-like (s-trim str)))
                        (t (versuri--db-search-lyrics-like str)))))
     (cl-multiple-value-bind (artist-max-len song-max-len)
       (cl-loop for entry in entries
@@ -70,10 +68,9 @@ and song name."
                maximize (length (caddr entry)) into song
                finally (return (cl-values artist song)))
       (seq-uniq
-       (seq-remove #'null
-        (versuri--mappend
+       (mapcan
          (lambda (song)
-           (mapcar (lambda (verse)                
+           (mapcar (lambda (verse)
                 (list
                  ;; Build the line presented to the user for selection in a nice
                  ;; table of artist/song/verse.
@@ -92,13 +89,13 @@ and song name."
               (if (not (or (seq-empty-p str)
                            (s-equals-p " " (substring str 0 1))))
                   (seq-remove #'null
-                              (mapcar (lambda (line)                       
-                                   (s-match (format ".*%s.*" str) line))
+                              (mapcar (lambda (line)
+                                   (car (s-match (format ".*%s.*" str) line)))
                                  (s-lines (cadddr song))))
                 ;; First line of the lyrics.
                 (list (car (s-lines (cadddr song)))))))
          ;; All entries in db that contain `str' in the lyrics column.
-         entries))))))
+         entries)))))
 
 (defun lyrics-lyrics (query-str)
   "Select and return an entry from the lyrics db."
