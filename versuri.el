@@ -42,17 +42,28 @@
   (versuri--db-read
    (format "SELECT * from lyrics WHERE lyrics like '%% %s %%'" str)))
 
+(defun versuri--db-artists (artist)
+  (versuri--db-read
+   (format "SELECT * from lyrics WHERE artist=\"%s\"" artist)))
+
+(defun versuri--db-all-entries ()
+  (versuri--db-read "SELECT * from lyrics"))
+
 (defun versuri--db-save-lyrics (artist song lyrics)
   "Save the `lyrics' for `artist' and `song' in the database."
   (esqlite-stream-execute versuri--db-stream
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
-           artist song lyrics)))
+           artist song (s-trim lyrics))))
 
-(defun versuri--db-search-songs (str)
+(defun versuri--ivy-search (str)
   "Search all stored lyrics that that match `str'. 
 For each match, return the matched line together with the artist
-and song name."
-  (let ((entries (versuri--db-search-lyrics-like str)))
+and song name."  
+  (let ((entries (cond ((s-blank? (s-trim str))
+                        (versuri--db-all-entries))
+                       ((s-equals-p " " (substring str 0 1))
+                        (versuri--db-artists (s-trim str)))
+                       (t (versuri--db-search-lyrics-like str)))))
     (cl-multiple-value-bind (artist-max-len song-max-len)
       (cl-loop for entry in entries
                maximize (length (cadr entry)) into artist
@@ -62,30 +73,39 @@ and song name."
        (seq-remove #'null
         (versuri--mappend
          (lambda (song)
-           (mapcar (lambda (verse)
-                ;; Build the line presented to the user for selection.
-                (if-let ((line (car (s-match (format ".*%s.*" str) verse))))
-                    (list
-                     ;; ...in a nice table of artist/song/verse
-                     (format (s-format "%-${artist-width}s   %-${song-width}s   ${verse}"
-                              'aget
-                              `(("artist-width" . ,artist-max-len)
-                                ("song-width"   . ,song-max-len)
-                                ("verse"        . ,verse)))
-                             (cadr song) (caddr song))
-                     ;; And pass the artist, song and verse line along also.
-                     (cadr song) (caddr song) line)))
+           (mapcar (lambda (verse)                
+                (list
+                 ;; Build the line presented to the user for selection in a nice
+                 ;; table of artist/song/verse.
+                 (format (s-format
+                          ;; Add the width for the nice table-like feature.
+                          "%-${artist-width}s   %-${song-width}s   ${verse}"
+                          'aget
+                          `(("artist-width" . ,artist-max-len)
+                            ("song-width"   . ,song-max-len)
+                            ("verse"        . ,verse)))
+                         ;; Add the actual artist and song
+                         (cadr song) (caddr song))
+                 ;; And pass the artist, song and verse line along also.
+                 (cadr song) (caddr song) "blaa"))
               ;; Go through all the verses in the lyrics column for each entry.
-              (s-lines (cadddr song))))
+              (if (not (or (seq-empty-p str)
+                           (s-equals-p " " (substring str 0 1))))
+                  (seq-remove #'null
+                              (mapcar (lambda (line)                       
+                                   (s-match (format ".*%s.*" str) line))
+                                 (s-lines (cadddr song))))
+                ;; First line of the lyrics.
+                (list (car (s-lines (cadddr song)))))))
          ;; All entries in db that contain `str' in the lyrics column.
-         (versuri--db-search-lyrics-like str)))))))
+         entries))))))
 
 (defun lyrics-lyrics (query-str)
   "Select and return an entry from the lyrics db."
   (interactive "MSearch lyrics: ")
   (let (res)
     (ivy-read "Select Lyrics: "
-            (versuri--db-search-songs query-str)
+            (versuri--ivy-search query-str)
             :action (lambda (song)
                       (setf res (list (cadr song) (caddr song)))))
     res))
