@@ -1,4 +1,40 @@
-;;; versuri.el --- Playing with lyrics -*- lexical-binding: t -*-
+;;; versuri --- The lyrics package -*- lexical-binding: t -*-
+
+;; Copyright (C) 2020 Mihai Olteanu
+
+;; Author: Mihai Olteanu <mihai_olteanu@fastmail.fm>
+;; Version: 1.0
+;; Package-Requires: ((emacs "26.1") (request "0.3.0") (anaphora "1.0.4") (elquery "0.1.0") (s "1.12.0") (ivy "0.11.0"))
+;; Keywords: music
+;; URL: https://github.com/mihaiolteanu/versuri/
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; A package to fetch lyrics from well-known websites and store them in a local
+;; sqlite database.
+
+;; Features:
+;; - makeitpersonal, genius, songlyrics, metrolyrics, musixmatch and azlyrics
+;; are all supported
+;; - the supported websites can be modified or extended by the user.
+;; - the database is searchable using ivy-read and it can display either all the
+;; entries in the database, all the entries for a given artist or all the
+;; entries where the lyrics contain a given string.
+
+;;; Code:
 
 (require 'cl-lib)
 (require 'dash)
@@ -6,6 +42,7 @@
 (require 'elquery)
 (require 's)
 (require 'esqlite)
+(require 'ivy)
 
 (defconst versuri--db-stream
   (let ((db (concat (xdg-config-home) "/versuri.db")))
@@ -20,58 +57,60 @@
              "               COLLATE NOCASE, "
              "lyrics TEXT    COLLATE NOCASE);"))
     (esqlite-stream-open db))
-  "The storage place of all succesfully retrieved lyrics.")
+  "The storage place of all succesfully retrieved lyrics.
+An empty table and a new db file is created on the first usage.")
 
 (defun versuri--db-read (query)
-  "Call the `query' on the database and return the result."
+  "Call the QUERY on the database and return the result."
   (esqlite-stream-read versuri--db-stream query))
 
 (defun versuri--db-get-lyrics (artist song)
-  "Retrieve the stored lyrics for `artist' and `song'."
+  "Retrieve the stored lyrics for ARTIST and SONG."
   (aif (versuri--db-read
         (format "SELECT lyrics FROM lyrics WHERE artist=\"%s\" AND song=\"%s\""
                 artist song))
       (car (car it))))
 
 (defun versuri--db-search-lyrics-like (str)
-  "Retrieve all entries that contain lyrics like `str'."
+  "Retrieve all entries that contain lyrics like STR."
   (versuri--db-read
    (format "SELECT * from lyrics WHERE lyrics like '%%%s%%'" str)))
 
 (defun versuri--db-artists-like (artist)
-  "Retrieve all entries that contain artists like `artist'."
+  "Retrieve all entries that contain artists like ARTIST."
   (versuri--db-read
    (format "SELECT * from lyrics WHERE artist like '%%%s%%'" artist)))
 
 (defun versuri--db-all-entries ()
+  "Select everything from the database."
   (versuri--db-read "SELECT * from lyrics"))
 
 (defun versuri--db-save-lyrics (artist song lyrics)
-  "Save the `lyrics' for `artist' and `song' in the database."
+  "Save the LYRICS for ARTIST and SONG in the database."
   (esqlite-stream-execute versuri--db-stream
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
            artist song (s-trim lyrics))))
 
 (defun versuri-ivy-search (str)
-  "Search the database for all entries that match `str'.
+  "Search the database for all entries that match STR.
 Use ivy to let the user select one of the entries and return it.
 
-If `str' is empty, present the user with all the entries in the
+If STR is empty, present the user with all the entries in the
 database, each entry containing the artist, song name and the
 first line of the lyrics.
 
-If `str' begins with empty space but is otherwise non-empty,
+If STR begins with empty space but is otherwise non-empty,
 present the user with all the entries in the databse for which
-the artist field matches `str', each entry containing the artist,
-song name and the first line of the lyrics. Thus, this is an
+the artist field matches STR, each entry containing the artist,
+song name and the first line of the lyrics.  Thus, this is an
 artist search.
 
-Otherwise, if `str' does not begin with an empty space and it's
+Otherwise, if STR does not begin with an empty space and it's
 not empty either, present the user with all the entries in the
-database for which the lyrics field matches `str', each line
+database for which the lyrics field matches STR, each line
 containing the artist, song name and the line from the lyrics
-that matches `str'. There can be more entries with the same
-artist and song name if the `str' matches multiple lines in the
+that matches STR.  There can be more entries with the same
+artist and song name if the STR matches multiple lines in the
 lyrics."
   (interactive "MSearch lyrics: ")
   (let (res)
@@ -90,7 +129,7 @@ lyrics."
          (mapcan
           (lambda (song)
             (mapcar (lambda (verse)
-                 (list               
+                 (list
                   ;; Build a table of artist/song/verse with padding.
                   (format (s-format  "%-$0s   %-$1s   %s" 'elt
                                      ;; Add the padding
@@ -108,19 +147,20 @@ lyrics."
                             (s-lines (cadddr song))))
                  ;; First line of the lyrics.
                  (list (car (s-lines (cadddr song)))))))
-          ;; All entries in db that contain `str' in the lyrics column.
+          ;; All entries in db that contain str in the lyrics column.
           entries)))
-     :action (lambda (song)               
+     :action (lambda (song)
                (setf res (list (cadr song) (caddr song)))))
     res))
 
 (defun versuri--elquery-read-string (string)
-  "Like the original elquery-read-string, but don't remove spaces.
+  "Return the AST of the html string STRING as a plist.
+Like the original elquery-read-string, but don't remove spaces.
 
 The original elquery-read-string removes all newlines (issue on
 github created), which means all the parsed lyrics are returned
 in one giant string with no way of knowing where one line ends
-and the other one begins. The solution in this defun uses an
+and the other one begins.  The solution in this defun uses an
 internal elquery function, which might be a problem in the
 future.
 
@@ -141,29 +181,29 @@ github also created). (set-buffer-multibyte nil) solves it."
 
 (defun versuri-add-website (name template separator query)
   "Define a new website where lyrics can be searched.
-If a website with the given `name' already exists, replace it. If
-not, use the `name', `template' `separator' and `query' to define
-a new lyrics website structure and add it to the list of known
-websites for lyrics searches. 
+If a website with the given NAME already exists, replace it.  If
+not, use the NAME, TEMPLATE SEPARATOR and QUERY to define a new
+lyrics website structure and add it to the list of known websites
+for lyrics searches.
 
-`name' is a user-friendly name of the website.
+NAME is a user-friendly name of the website.
 
-`template' is the website url with placeholders for ${artist} and
-${song}. Replacing these templates with actual artist and song
+TEMPLATE is the website url with placeholders for ${artist} and
+${song}.  Replacing these templates with actual artist and song
 names results in a valid url that can be used to return the
 lyrics.
 
-`separator' is used in conjunction with `template' to build the
-requested url. The empty spaces in the artist and song name are
-replaced with `separator's. Some websites use dashes, others plus
+SEPARATOR is used in conjunction with TEMPLATE to build the
+requested url.  The empty spaces in the artist and song name are
+replaced with SEPARATORs.  Some websites use dashes, others plus
 signs, for example.
 
-`query' is used in the parsing phase of the html response. It
+QUERY is used in the parsing phase of the html response.  It
 specifies the css selectors used by elquery to extract the lyrics
 part of the html page."
   (let ((new-website (make-versuri--website
                       :name name
-                      :template template         
+                      :template template
                       :separator separator
                       :query query)))
     ;; Replace the entry if there is already a website with the same name.
@@ -199,8 +239,8 @@ part of the html page."
   "" "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")
 
 (defun versuri--build-url (website artist song)
-  "Use the `website' definition to build a valid url.
-`artist' and `song' are replaced in the `website' template."
+  "Use the WEBSITE definition to build a valid url.
+ARTIST and SONG are replaced in the WEBSITE template."
   (let ((sep (versuri--website-separator website)))
     (s-format (versuri--website-template website)
               'aget
@@ -208,23 +248,21 @@ part of the html page."
                 ("song"   . ,(s-replace " " sep song))))))
 
 (defun versuri--request (website artist song callback)
-  "Request the lyrics for `artist' and `song' at `website'.
+  "Request the lyrics for ARTIST and SONG at WEBSITE.
 `callback' is called with the response data or with nil in case
 of an error."
-  (let (resp)
-    (request (versuri--build-url website artist song)
+  (request (versuri--build-url website artist song)
            :parser 'buffer-string
            :sync nil
            :success (cl-function
                      (lambda (&key data &allow-other-keys)
                        (funcall callback data)))
-           :error (cl-function
-                   (lambda (&key data &allow-other-keys)
-                     (funcall callback nil)))))
+           :error (lambda ()
+                    (funcall callback nil)))
   nil)
 
 (defun versuri--parse (website html)
-  "Use the `website' definition to parse the `html' response."
+  "Use the WEBSITE definition to parse the `html' response."
   (let* ((css (versuri--website-query website))
          (parsed (elquery-$ css (versuri--elquery-read-string html)))
          (lyrics))
@@ -246,7 +284,7 @@ of an error."
 
 (cl-defun versuri-lyrics
     (artist song callback &optional (websites versuri--websites))
-  "Call `callback' with the lyrics for `artist' and `song'.
+  "Call `callback' with the lyrics for ARTIST and SONG.
 
 If the lyrics is found in the database, use that.
 there. Otherwise, search through `websites' for them. If found,
@@ -274,8 +312,8 @@ the call with the remaining websites."
               (versuri-lyrics artist song callback
                               (-remove-item website websites))))))))
 
-(defun versuri-lyrics-display (artist song)
-  "Display the lyrics for `artist' and `song' in a new buffer."
+(defun versuri-display (artist song)
+  "Display the lyrics for ARTIST and SONG in a new buffer."
   (versuri-lyrics artist song
     (lambda (lyrics)
       (let ((name (format "%s - %s | lyrics" artist song)))
@@ -289,19 +327,19 @@ the call with the remaining websites."
               (local-set-key (kbd "q") 'kill-current-buffer))
             (switch-to-buffer b)))))))
 
-(defun versuri-save-lyrics (artist song)
-  "Save the lyrics for `artist' and `song' in the database."
+(defun versuri-save (artist song)
+  "Save the lyrics for ARTIST and SONG in the database."
   (versuri-lyrics artist song #'ignore))
 
-(defun versuri-save-request-lyrics (songs max-timeout)
-  "Save the lyrics for all `songs'.
-`songs' is a list of '(\"artist\" \"song\") lists.
+(defun versuri-save-bulk (songs max-timeout)
+  "Save the lyrics for all SONGS.
+SONGS is a list of '(\"artist\" \"song\") lists.
 To avoid getting banned by the lyrics websites, wait a maximum of
-`max-timeout' seconds between requests.
+MAX-TIMEOUT seconds between requests.
 
 !!!This is a sync request!!! Depending on the number of entries
-in the `songs' list, it can take a while. In the meantime, Emacs
-will be blocked. Better use it while you go for a coffee break. "
+in the SONGS list, it can take a while. In the meantime, Emacs
+will be blocked.  Better use it while you go for a coffee break."
   (dolist (song songs)
     (save-lyrics (car song) (cadr song))
     (sleep-for (random max-timeout))))
