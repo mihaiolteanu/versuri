@@ -63,39 +63,33 @@ and song name."
                         (versuri--db-artists-like (s-trim str)))
                        (t (versuri--db-search-lyrics-like str)))))
     (cl-multiple-value-bind (artist-max-len song-max-len)
-      (cl-loop for entry in entries
-               maximize (length (cadr entry)) into artist
-               maximize (length (caddr entry)) into song
-               finally (return (cl-values artist song)))
-      (seq-uniq
-       (mapcan
-         (lambda (song)
-           (mapcar (lambda (verse)
-                (list
-                 ;; Build the line presented to the user for selection in a nice
-                 ;; table of artist/song/verse.
-                 (format (s-format
-                          ;; Add the width for the nice table-like feature.
-                          "%-${artist-width}s   %-${song-width}s   ${verse}"
-                          'aget
-                          `(("artist-width" . ,artist-max-len)
-                            ("song-width"   . ,song-max-len)
-                            ("verse"        . ,verse)))
-                         ;; Add the actual artist and song
-                         (cadr song) (caddr song))
-                 ;; And pass the artist, song and verse line along also.
-                 (cadr song) (caddr song) "blaa"))
-              ;; Go through all the verses in the lyrics column for each entry.
-              (if (not (or (seq-empty-p str)
-                           (s-equals-p " " (substring str 0 1))))
-                  (seq-remove #'null
-                              (mapcar (lambda (line)
-                                   (car (s-match (format ".*%s.*" str) line)))
-                                 (s-lines (cadddr song))))
-                ;; First line of the lyrics.
-                (list (car (s-lines (cadddr song)))))))
-         ;; All entries in db that contain `str' in the lyrics column.
-         entries)))))
+        (cl-loop for entry in entries
+                 maximize (length (cadr entry)) into artist
+                 maximize (length (caddr entry)) into song
+                 finally (return (cl-values artist song)))
+      (mapcan
+       (lambda (song)
+         (mapcar (lambda (verse)
+              (list               
+               ;; Build a table of artist/song/verse with padding.
+               (format (s-format  "%-$0s   %-$1s   %s" 'elt
+                                  ;; Add the padding
+                                  `(,artist-max-len ,song-max-len))
+                       ;; Add the actual artist, song and verse.
+                       (cadr song) (caddr song) verse)
+               ;; The unformatted info, used for ivy :action
+               (cadr song) (caddr song) verse))
+            ;; Go through all the verses in the lyrics column for each entry.
+            (if (not (or (seq-empty-p str)
+                         (s-equals-p " " (substring str 0 1))))
+                (seq-uniq
+                 (mapcan (lambda (line)
+                           (s-match (format ".*%s.*" str) line))
+                         (s-lines (cadddr song))))
+              ;; First line of the lyrics.
+              (list (car (s-lines (cadddr song)))))))
+       ;; All entries in db that contain `str' in the lyrics column.
+       entries))))
 
 (defun lyrics-lyrics (query-str)
   "Select and return an entry from the lyrics db."
