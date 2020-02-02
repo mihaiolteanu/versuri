@@ -53,52 +53,66 @@ Only take into consideration complete words."
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
            artist song (s-trim lyrics))))
 
-(defun versuri--ivy-search (str)
-  "Search all stored lyrics that that match `str'. 
-For each match, return the matched line together with the artist
-and song name."  
-  (let ((entries (cond ((s-blank? (s-trim str))
-                        (versuri--db-all-entries))
-                       ((s-equals-p " " (substring str 0 1))
-                        (versuri--db-artists-like (s-trim str)))
-                       (t (versuri--db-search-lyrics-like str)))))
-    (cl-multiple-value-bind (artist-max-len song-max-len)
-        (cl-loop for entry in entries
-                 maximize (length (cadr entry)) into artist
-                 maximize (length (caddr entry)) into song
-                 finally (return (cl-values artist song)))
-      (mapcan
-       (lambda (song)
-         (mapcar (lambda (verse)
-              (list               
-               ;; Build a table of artist/song/verse with padding.
-               (format (s-format  "%-$0s   %-$1s   %s" 'elt
-                                  ;; Add the padding
-                                  `(,artist-max-len ,song-max-len))
-                       ;; Add the actual artist, song and verse.
-                       (cadr song) (caddr song) verse)
-               ;; The unformatted info, used for ivy :action
-               (cadr song) (caddr song) verse))
-            ;; Go through all the verses in the lyrics column for each entry.
-            (if (not (or (seq-empty-p str)
-                         (s-equals-p " " (substring str 0 1))))
-                (seq-uniq
-                 (mapcan (lambda (line)
-                           (s-match (format ".*%s.*" str) line))
-                         (s-lines (cadddr song))))
-              ;; First line of the lyrics.
-              (list (car (s-lines (cadddr song)))))))
-       ;; All entries in db that contain `str' in the lyrics column.
-       entries))))
+(defun versuri-ivy-search (str)
+  "Search the database for all entries that match `str'.
+Use ivy to let the user select one of the entries and return it.
 
-(defun lyrics-lyrics (query-str)
-  "Select and return an entry from the lyrics db."
+If `str' is empty, present the user with all the entries in the
+database, each entry containing the artist, song name and the
+first line of the lyrics.
+
+If `str' begins with empty space but is otherwise non-empty,
+present the user with all the entries in the databse for which
+the artist field matches `str', each entry containing the artist,
+song name and the first line of the lyrics. Thus, this is an
+artist search.
+
+Otherwise, if `str' does not begin with an empty space and it's
+not empty either, present the user with all the entries in the
+database for which the lyrics field matches `str', each line
+containing the artist, song name and the line from the lyrics
+that matches `str'. There can be more entries with the same
+artist and song name if the `str' matches multiple lines in the
+lyrics."
   (interactive "MSearch lyrics: ")
   (let (res)
-    (ivy-read "Select Lyrics: "
-            (versuri--ivy-search query-str)
-            :action (lambda (song)
-                      (setf res (list (cadr song) (caddr song)))))
+    (ivy-read
+     "Select Lyrics: "
+     (let ((entries (cond ((s-blank? (s-trim str))
+                           (versuri--db-all-entries))
+                          ((s-equals-p " " (substring str 0 1))
+                           (versuri--db-artists-like (s-trim str)))
+                          (t (versuri--db-search-lyrics-like str)))))
+       (cl-multiple-value-bind (artist-max-len song-max-len)
+           (cl-loop for entry in entries
+                    maximize (length (cadr entry)) into artist
+                    maximize (length (caddr entry)) into song
+                    finally (return (cl-values artist song)))
+         (mapcan
+          (lambda (song)
+            (mapcar (lambda (verse)
+                 (list               
+                  ;; Build a table of artist/song/verse with padding.
+                  (format (s-format  "%-$0s   %-$1s   %s" 'elt
+                                     ;; Add the padding
+                                     `(,artist-max-len ,song-max-len))
+                          ;; Add the actual artist, song and verse.
+                          (cadr song) (caddr song) verse)
+                  ;; The unformatted info, used for ivy :action
+                  (cadr song) (caddr song) verse))
+               ;; Go through all the verses in the lyrics column for each entry.
+               (if (not (or (seq-empty-p str)
+                            (s-equals-p " " (substring str 0 1))))
+                   (seq-uniq
+                    (mapcan (lambda (line)
+                              (s-match (format ".*%s.*" str) line))
+                            (s-lines (cadddr song))))
+                 ;; First line of the lyrics.
+                 (list (car (s-lines (cadddr song)))))))
+          ;; All entries in db that contain `str' in the lyrics column.
+          entries)))
+     :action (lambda (song)               
+               (setf res (list (cadr song) (caddr song)))))
     res))
 
 ;;;; Get the lyrics with elquery
