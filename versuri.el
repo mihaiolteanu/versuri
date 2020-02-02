@@ -34,10 +34,9 @@
       (car (car it))))
 
 (defun versuri--db-search-lyrics-like (str)
-  "Retrieve all entries that contain lyrics like `str'.
-Only take into consideration complete words."
+  "Retrieve all entries that contain lyrics like `str'."
   (versuri--db-read
-   (format "SELECT * from lyrics WHERE lyrics like '%% %s %%'" str)))
+   (format "SELECT * from lyrics WHERE lyrics like '%%%s%%'" str)))
 
 (defun versuri--db-artists-like (artist)
   "Retrieve all entries that contain artists like `artist'."
