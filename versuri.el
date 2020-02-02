@@ -97,8 +97,8 @@ lyrics."
                                      `(,artist-max-len ,song-max-len))
                           ;; Add the actual artist, song and verse.
                           (cadr song) (caddr song) verse)
-                  ;; The unformatted info, used for ivy :action
-                  (cadr song) (caddr song) verse))
+                  ;; Artist and song, recoverable in :action lambda.
+                  (cadr song) (caddr song)))
                ;; Go through all the verses in the lyrics column for each entry.
                (if (not (or (seq-empty-p str)
                             (s-equals-p " " (substring str 0 1))))
