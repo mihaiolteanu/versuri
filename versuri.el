@@ -29,10 +29,11 @@
 ;; Features:
 ;; - makeitpersonal, genius, songlyrics, metrolyrics, musixmatch and azlyrics
 ;; are all supported
-;; - the supported websites can be modified or extended by the user.
-;; - the database is searchable using ivy-read and it can display either all the
-;; entries in the database, all the entries for a given artist or all the
-;; entries where the lyrics contain a given string.
+;; - add new websites or modify existing ones with `versuri-add-website'
+;; - search the database with ivy-read and either for all the entries in the
+;; database, all the entries for a given artist or all the entries where the
+;; lyrics field contains a given string.
+;; - synchronous bulk request for lyrics for a given list of songs.
 
 ;;; Code:
 
@@ -94,24 +95,17 @@ An empty table and a new db file is created on the first usage.")
 (defun versuri-ivy-search (str)
   "Search the database for all entries that match STR.
 Use ivy to let the user select one of the entries and return it.
+Each entry contains the artist name, song name and a verse line.
 
-If STR is empty, present the user with all the entries in the
-database, each entry containing the artist, song name and the
-first line of the lyrics.
+If STR is empty, this is a search through all the entries in the
+database.
 
-If STR begins with empty space but is otherwise non-empty,
-present the user with all the entries in the databse for which
-the artist field matches STR, each entry containing the artist,
-song name and the first line of the lyrics.  Thus, this is an
-artist search.
+If STR starts with an empty space, this is a search for all
+artists that contain STR in their name.
 
-Otherwise, if STR does not begin with an empty space and it's
-not empty either, present the user with all the entries in the
-database for which the lyrics field matches STR, each line
-containing the artist, song name and the line from the lyrics
-that matches STR.  There can be more entries with the same
-artist and song name if the STR matches multiple lines in the
-lyrics."
+Otherwise, this is a search for all the lyrics that contain STR.
+There can be more entries with the same artist and song name if
+the STR matches multiple lines in the lyrics."
   (interactive "MSearch lyrics: ")
   (let (res)
     (ivy-read
@@ -200,7 +194,10 @@ signs, for example.
 
 QUERY is used in the parsing phase of the html response.  It
 specifies the css selectors used by elquery to extract the lyrics
-part of the html page."
+part of the html page.
+
+See the already defined websites for examples for all of the
+above parameters."
   (let ((new-website (make-versuri--website
                       :name name
                       :template template
@@ -262,36 +259,36 @@ of an error."
   nil)
 
 (defun versuri--parse (website html)
-  "Use the WEBSITE definition to parse the `html' response."
+  "Use the WEBSITE definition to parse the HTML response."
   (let* ((css (versuri--website-query website))
          (parsed (elquery-$ css (versuri--elquery-read-string html)))
          (lyrics))
     ;; Some lyrics are split into multiple elements (musixmatch), otherwise, an
     ;; (elquery-text (car el)) would have been enough, which is basically what
     ;; happens if there is only one element, anyway.
-    (mapcar (lambda (el)
-         (let ((text (elquery-text el)))
-           (setf lyrics (concat                         
-                         (if (equal (versuri--website-name website)
-                                    "songlyrics")
-                             ;; Songlyrics adds <br> elements after each line.
-                             (s-replace "" "" text)
-                           text)
-                         "\n\n"
-                         lyrics))))
+    (mapc (lambda (el)
+            (let ((text (elquery-text el)))
+              (setf lyrics (concat
+                            (if (equal (versuri--website-name website)
+                                       "songlyrics")
+                                ;; Songlyrics adds <br> elements after each
+                                ;; line.
+                                (s-replace "" "" text)
+                              text)
+                            "\n\n"
+                            lyrics))))
        parsed)
     lyrics))
 
 (cl-defun versuri-lyrics
     (artist song callback &optional (websites versuri--websites))
-  "Call `callback' with the lyrics for ARTIST and SONG.
+  "Pass the lyrics for ARTIST and SONG to the CALLBACK function.
 
-If the lyrics is found in the database, use that.
-there. Otherwise, search through `websites' for them. If found,
-save them to the database and recursivelly call this function
-again. The `callback' is needed since the requests are async.
+Async call. If the lyrics is found in the database, use that.
+Otherwise, search through WEBSITES for them. If found, save
+them to the database and recursivelly call this function again.
 
-By default, `websites' is bound to the list of all the known
+By default, WEBSITES is bound to the list of all the known
 websites. To avoid getting banned, a random website is taken on
 every request. If the lyrics is not found on that website, repeat
 the call with the remaining websites."
@@ -306,14 +303,19 @@ the call with the remaining websites."
                      (not (s-contains? "Sorry, We don't have lyrics" resp)))
                 ;; Positive response
                 (when-let (lyrics (versuri--parse website resp))
-                  (versuri--db-save-lyrics artist song lyrics)                  
+                  (versuri--db-save-lyrics artist song lyrics)
                   (versuri-lyrics artist song callback))
               ;; Lyrics not found, try another website.
               (versuri-lyrics artist song callback
                               (-remove-item website websites))))))))
 
 (defun versuri-display (artist song)
-  "Display the lyrics for ARTIST and SONG in a new buffer."
+  "Search and display the lyrics for ARTIST and SONG in a buffer.
+
+Async call.  When found, the lyrics are inserted in a new text,
+read-only buffer.  If the buffer with the same lyrics exists,
+switch to it.  Inside the buffer, `q' is bound to
+`kill-current-buffer'"
   (versuri-lyrics artist song
     (lambda (lyrics)
       (let ((name (format "%s - %s | lyrics" artist song)))
@@ -328,18 +330,22 @@ the call with the remaining websites."
             (switch-to-buffer b)))))))
 
 (defun versuri-save (artist song)
-  "Save the lyrics for ARTIST and SONG in the database."
+  "Search and save the lyrics for ARTIST and SONG.
+
+Async call.  When found, the lyrics are saved in the database.
+If lyrics already in the database, do nothing."
   (versuri-lyrics artist song #'ignore))
 
 (defun versuri-save-bulk (songs max-timeout)
   "Save the lyrics for all SONGS.
-SONGS is a list of '(\"artist\" \"song\") lists.
+
+SONGS is a list of '(artist song) lists.
 To avoid getting banned by the lyrics websites, wait a maximum of
 MAX-TIMEOUT seconds between requests.
 
-!!!This is a sync request!!! Depending on the number of entries
-in the SONGS list, it can take a while. In the meantime, Emacs
-will be blocked.  Better use it while you go for a coffee break."
+Sync call! Depending on the number of entries in the SONGS list,
+it can take a while.  In the meantime, Emacs will be blocked.
+Better use it while on a coffee break."
   (dolist (song songs)
     (save-lyrics (car song) (cadr song))
     (sleep-for (random max-timeout))))
