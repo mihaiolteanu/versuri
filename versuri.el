@@ -236,7 +236,7 @@ above parameters."
   "" "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")
 
 (defun versuri-find-website (name)
-  "Find a website named NAME in the list of defined websites."
+  "Find a website by NAME in the list of defined websites."
   (cl-find-if (lambda (website)
                 (equal website name))
               versuri--websites
@@ -319,10 +319,10 @@ the call with the remaining websites."
 (defun versuri-display (artist song)
   "Search and display the lyrics for ARTIST and SONG in a buffer.
 
-Async call.  When found, the lyrics are inserted in a new text,
-read-only buffer.  If the buffer with the same lyrics exists,
-switch to it.  Inside the buffer, `q' is bound to
-`kill-current-buffer'"
+Async call.  When found, the lyrics are inserted in a new
+read-only buffer.  If the buffer with the same lyrics already
+exists, switch to it and don't create a new buffer.  Inside the
+buffer, `q' is bound to `kill-current-buffer'."
   (versuri-lyrics artist song
     (lambda (lyrics)
       (let ((name (format "%s - %s | lyrics" artist song)))
