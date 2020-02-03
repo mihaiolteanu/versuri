@@ -235,6 +235,13 @@ above parameters."
   "https://www.azlyrics.com/lyrics/${artist}/${song}.html"
   "" "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")
 
+(defun versuri-find-website (name)
+  "Find a website named NAME in the list of defined websites."
+  (cl-find-if (lambda (website)
+                (equal website name))
+              versuri--websites
+              :key #'versuri--website-name))
+
 (defun versuri--build-url (website artist song)
   "Use the WEBSITE definition to build a valid url.
 ARTIST and SONG are replaced in the WEBSITE template."
