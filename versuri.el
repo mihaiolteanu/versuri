@@ -1,4 +1,4 @@
-;;; versuri --- The lyrics package -*- lexical-binding: t -*-
+;;; versuri.el --- The lyrics package for Emacs -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020 Mihai Olteanu
 
@@ -358,3 +358,5 @@ Better use it while on a coffee break."
     (sleep-for (random max-timeout))))
 
 (provide 'versuri)
+
+;;; versuri.el ends here
