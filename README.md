@@ -105,7 +105,18 @@ will be implemented.
     Async call.  When found, the lyrics are inserted in a new
     read-only buffer.  If the buffer with the same lyrics already
     exists, switch to it and don't create a new buffer.  Inside the
-    buffer, `q' is bound to `kill-current-buffer'.
+    buffer, the following keybindings are active:
+
+    q: kill the buffer
+
+    x: delete the entry from the database and kill the
+    buffer.  Useful if you don't want to keep the lyrics around.
+
+    r: find the lyrics on another website and redisplay the buffer.
+    This is similar to 'x', but the lyrics is then searched and
+    displayed again in a new buffer.  Not all websites have the same
+    lyrics for the same song.  Some might be incomplete, some might
+    be ugly.
 
 **versuri-save** (artist song)
 
@@ -113,6 +124,10 @@ will be implemented.
 
     Async call.  When found, the lyrics are saved in the database.
     If lyrics already in the database, do nothing.
+
+**versuri-delete-lyrics** (artist song)
+
+    Remove entry for ARTIST and SONG form the database.
 
 **versuri-ivy-search** (str)
 

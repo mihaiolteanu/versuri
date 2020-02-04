@@ -95,6 +95,14 @@ An empty table and a new db file is created on the first usage.")
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
            artist song (s-trim lyrics))))
 
+(defun versuri-delete-lyrics (artist song)
+  "Remove entry for ARTIST and SONG form the database."
+  (print (format "%s - %s" artist song))
+  (esqlite-stream-execute
+   versuri--db-stream
+   (format "DELETE FROM lyrics WHERE artist=\"%s\" and song=\"%s\""
+           artist song)))
+
 (defun versuri-ivy-search (str)
   "Search the database for all entries that match STR.
 Use ivy to let the user select one of the entries and return it.
@@ -313,7 +321,18 @@ the call with the remaining websites."
 Async call.  When found, the lyrics are inserted in a new
 read-only buffer.  If the buffer with the same lyrics already
 exists, switch to it and don't create a new buffer.  Inside the
-buffer, `q' is bound to `kill-current-buffer'."
+buffer, the following keybindings are active:
+
+q: kill the buffer
+
+x: delete the entry from the database and kill the
+buffer.  Useful if you don't want to keep the lyrics around.
+
+r: find the lyrics on another website and redisplay the buffer.
+This is similar to 'x', but the lyrics is then searched and
+displayed again in a new buffer.  Not all websites have the same
+lyrics for the same song.  Some might be incomplete, some might
+be ugly."
   (versuri-lyrics artist song
     (lambda (lyrics)
       (let ((name (format "%s - %s | lyrics" artist song)))
@@ -324,7 +343,20 @@ buffer, `q' is bound to `kill-current-buffer'."
               (insert (format "%s - %s\n\n" artist song))
               (insert lyrics)
               (read-only-mode)
-              (local-set-key (kbd "q") 'kill-current-buffer))
+              (local-set-key (kbd "q") 'kill-current-buffer)
+              ;; Forget about these lyrics.
+              (local-set-key (kbd "x")
+                             (lambda ()
+                               (interactive)
+                               (versuri-delete-lyrics artist song)
+                               (kill-buffer it)))
+              ;; Find another website for these lyrics.
+              (local-set-key (kbd "r")
+                             (lambda ()
+                               (interactive)
+                               (versuri-delete-lyrics artist song)
+                               (kill-buffer it)
+                               (versuri-display artist song))))
             (switch-to-buffer b)))))))
 
 (defun versuri-save (artist song)
