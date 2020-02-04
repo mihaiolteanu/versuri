@@ -245,12 +245,19 @@ above parameters."
 
 (defun versuri--build-url (website artist song)
   "Use the WEBSITE definition to build a valid URL.
-ARTIST and SONG are replaced in the WEBSITE template."
-  (let ((sep (versuri--website-separator website)))
+ARTIST and SONG are replaced in the WEBSITE template after they
+are cleaned up according to the site specific URL format rules."
+  (let* ((sep (versuri--website-separator website))
+         ;; All known websites remove the quote in the url.
+         (artist (s-replace "'" "" artist))
+         (song   (s-replace "'" "" song))
+         ;; Replace spaces with the site specific separator.
+         (artist (s-replace " " sep artist))
+         (song   (s-replace " " sep song)))
     (s-format (versuri--website-template website)
               'aget
-              `(("artist" . ,(s-replace " " sep artist))
-                ("song"   . ,(s-replace " " sep song))))))
+              `(("artist" . ,artist)
+                ("song"   . ,song)))))
 
 (defun versuri--request (website artist song callback)
   "Request the lyrics for ARTIST and SONG at WEBSITE.
