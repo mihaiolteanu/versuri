@@ -1,11 +1,11 @@
-;;; versuri.el --- The lyrics package for Emacs -*- lexical-binding: t -*-
+;;; versuri.el --- The lyrics package -*- lexical-binding: t -*-
 
-;; Copyright (C) 2020 Mihai Olteanu
+;; Copyright (C) 2019-2020 Mihai Olteanu
 
 ;; Author: Mihai Olteanu <mihai_olteanu@fastmail.fm>
 ;; Version: 1.0
-;; Package-Requires: ((emacs "26.1") (request "0.3.0") (anaphora "1.0.4") (elquery "0.1.0") (s "1.12.0") (ivy "0.11.0"))
-;; Keywords: music
+;; Package-Requires: ((emacs "26.1") (dash "2.16.0") (request "0.3.0") (anaphora "1.0.4") (elquery "0.1.0") (s "1.12.0") (ivy "0.11.0"))
+;; Keywords: multimedia
 ;; URL: https://github.com/mihaiolteanu/versuri/
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -37,9 +37,11 @@
 
 ;;; Code:
 
+(require 'xdg)
 (require 'cl-lib)
 (require 'dash)
 (require 'request)
+(require 'anaphora)
 (require 'elquery)
 (require 's)
 (require 'esqlite)
@@ -58,7 +60,7 @@
              "               COLLATE NOCASE, "
              "lyrics TEXT    COLLATE NOCASE);"))
     (esqlite-stream-open db))
-  "The storage place of all succesfully retrieved lyrics.
+  "The storage place of all successfully retrieved lyrics.
 An empty table and a new db file is created on the first usage.")
 
 (defun versuri--db-read (query)
@@ -148,20 +150,20 @@ the STR matches multiple lines in the lyrics."
     res))
 
 (defun versuri--elquery-read-string (string)
-  "Return the AST of the html string STRING as a plist.
-Like the original elquery-read-string, but don't remove spaces.
+  "Return the AST of the HTML string STRING as a plist.
+Like the original `elquery-read-string', but don't remove spaces.
 
-The original elquery-read-string removes all newlines (issue on
+The original `elquery-read-string' removes all newlines (issue on
 github created), which means all the parsed lyrics are returned
 in one giant string with no way of knowing where one line ends
-and the other one begins.  The solution in this defun uses an
+and the other one begins.  The solution in this function uses an
 internal elquery function, which might be a problem in the
 future.
 
-Also, the original function does not parse utf8 chars (issue on
-github also created). (set-buffer-multibyte nil) solves it."
+Also, the original function does not parse UTF-8 chars (issue on
+github also created). (set-buffer-multibyte t) solves it."
   (with-temp-buffer
-    (set-buffer-multibyte nil)
+    (set-buffer-multibyte t)
     (insert string)
     (let ((tree (libxml-parse-html-region (point-min) (point-max))))
       (thread-last tree
@@ -176,25 +178,24 @@ github also created). (set-buffer-multibyte nil) solves it."
 (defun versuri-add-website (name template separator query)
   "Define a new website where lyrics can be searched.
 If a website with the given NAME already exists, replace it.  If
-not, use the NAME, TEMPLATE SEPARATOR and QUERY to define a new
-lyrics website structure and add it to the list of known websites
-for lyrics searches.
+not, define a new lyrics website structure and add it to the list
+of known websites for lyrics searches.
 
 NAME is a user-friendly name of the website.
 
-TEMPLATE is the website url with placeholders for ${artist} and
+TEMPLATE is the website URL with placeholders for ${artist} and
 ${song}.  Replacing these templates with actual artist and song
-names results in a valid url that can be used to return the
+names results in a valid URL that can be used to return the
 lyrics.
 
 SEPARATOR is used in conjunction with TEMPLATE to build the
-requested url.  The empty spaces in the artist and song name are
+requested URL.  The empty spaces in the artist and song name are
 replaced with SEPARATORs.  Some websites use dashes, others plus
 signs, for example.
 
-QUERY is used in the parsing phase of the html response.  It
-specifies the css selectors used by elquery to extract the lyrics
-part of the html page.
+QUERY is used in the parsing phase of the HTML response.  It
+specifies the CSS selectors used by elquery to extract the lyrics
+part of the HTML page.
 
 See the already defined websites for examples for all of the
 above parameters."
@@ -243,7 +244,7 @@ above parameters."
               :key #'versuri--website-name))
 
 (defun versuri--build-url (website artist song)
-  "Use the WEBSITE definition to build a valid url.
+  "Use the WEBSITE definition to build a valid URL.
 ARTIST and SONG are replaced in the WEBSITE template."
   (let ((sep (versuri--website-separator website)))
     (s-format (versuri--website-template website)
@@ -262,7 +263,12 @@ of an error."
                      (lambda (&key data &allow-other-keys)
                        (funcall callback data)))
            :error (lambda ()
-                    (funcall callback nil)))
+                    ;; Website does not have the lyrics for this song
+                    (funcall callback nil))
+           :status-code
+           '((403 . (lambda ()
+                      ;; Nothing to do if you got banned.
+                      (funcall callback nil)))))
   nil)
 
 (defun versuri--parse (website html)
@@ -293,7 +299,7 @@ of an error."
 
 Async call. If the lyrics is found in the database, use that.
 Otherwise, search through WEBSITES for them. If found, save
-them to the database and recursivelly call this function again.
+them to the database and recursively call this function again.
 
 By default, WEBSITES is bound to the list of all the known
 websites. To avoid getting banned, a random website is taken on
@@ -354,7 +360,7 @@ Sync call! Depending on the number of entries in the SONGS list,
 it can take a while.  In the meantime, Emacs will be blocked.
 Better use it while on a coffee break."
   (dolist (song songs)
-    (save-lyrics (car song) (cadr song))
+    (versuri-save (car song) (cadr song))
     (sleep-for (random max-timeout))))
 
 (provide 'versuri)
