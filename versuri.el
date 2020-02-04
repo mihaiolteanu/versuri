@@ -4,7 +4,7 @@
 
 ;; Author: Mihai Olteanu <mihai_olteanu@fastmail.fm>
 ;; Version: 1.0
-;; Package-Requires: ((emacs "26.1") (dash "2.16.0") (request "0.3.0") (anaphora "1.0.4") (elquery "0.1.0") (s "1.12.0") (ivy "0.11.0"))
+;; Package-Requires: ((emacs "26.1") (dash "2.16.0") (request "0.3.0") (anaphora "1.0.4") (esxml-query "0.1.0") (s "1.12.0") (ivy "0.11.0"))
 ;; Keywords: multimedia
 ;; URL: https://github.com/mihaiolteanu/versuri/
 
@@ -42,7 +42,7 @@
 (require 'dash)
 (require 'request)
 (require 'anaphora)
-(require 'elquery)
+(require 'esxml-query)
 (require 's)
 (require 'esqlite)
 (require 'ivy)
@@ -148,26 +148,6 @@ the STR matches multiple lines in the lyrics."
      :action (lambda (song)
                (setf res (list (cadr song) (caddr song)))))
     res))
-
-(defun versuri--elquery-read-string (string)
-  "Return the AST of the HTML string STRING as a plist.
-Like the original `elquery-read-string', but don't remove spaces.
-
-The original `elquery-read-string' removes all newlines (issue on
-github created), which means all the parsed lyrics are returned
-in one giant string with no way of knowing where one line ends
-and the other one begins.  The solution in this function uses an
-internal elquery function, which might be a problem in the
-future.
-
-Also, the original function does not parse UTF-8 chars (issue on
-github also created). (set-buffer-multibyte t) solves it."
-  (with-temp-buffer
-    (set-buffer-multibyte t)
-    (insert string)
-    (let ((tree (libxml-parse-html-region (point-min) (point-max))))
-      (thread-last tree
-        (elquery--parse-libxml-tree nil)))))
 
 (defconst versuri--websites nil
   "A list of all the websites where lyrics can be searched.")
@@ -279,26 +259,23 @@ of an error."
   nil)
 
 (defun versuri--parse (website html)
-  "Use the WEBSITE definition to parse the HTML response."
-  (let* ((css (versuri--website-query website))
-         (parsed (elquery-$ css (versuri--elquery-read-string html)))
-         (lyrics))
-    ;; Some lyrics are split into multiple elements (musixmatch), otherwise, an
-    ;; (elquery-text (car el)) would have been enough, which is basically what
-    ;; happens if there is only one element, anyway.
-    (mapc (lambda (el)
-            (let ((text (elquery-text el)))
-              (setf lyrics (concat
-                            (if (equal (versuri--website-name website)
-                                       "songlyrics")
-                                ;; Songlyrics adds <br> elements after each
-                                ;; line.
-                                (s-replace "" "" text)
-                              text)
-                            "\n\n"
-                            lyrics))))
-       parsed)
-    lyrics))
+  "Parse the HTML for lyrics according to the WEBSITE rules."
+  (let* ((tree (with-temp-buffer
+                 (insert html)
+                 (libxml-parse-html-region (point-min) (point-max))))
+         (queried (esxml-query-all
+                   (versuri--website-query website)
+                   tree)))
+    ;; Gather all available strings in a single string. This string represents
+    ;; the lyrics.
+    (-tree-reduce-from
+     (lambda (curr res)
+       (s-concat (if (stringp curr)
+                     curr
+                   "")
+                 res))
+     ""
+     queried)))
 
 (cl-defun versuri-lyrics
     (artist song callback &optional (websites versuri--websites))
