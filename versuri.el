@@ -38,6 +38,7 @@
 ;;; Code:
 
 (require 'xdg)
+(require 'subr-x)
 (require 'cl-lib)
 (require 'dash)
 (require 'request)
