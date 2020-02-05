@@ -75,15 +75,17 @@ An empty table and a new db file is created on the first usage.")
                 artist song))
       (car (car it))))
 
-(defun versuri--db-search-lyrics-like (str)
-  "Retrieve all entries that contain lyrics like STR."
+(defun versuri--db-search-lyrics-like (lyrics)
+  "Retrieve all entries that contain lyrics like LYRICS."
   (versuri--db-read
-   (format "SELECT * from lyrics WHERE lyrics like '%%%s%%'" str)))
+   (format "SELECT * from lyrics WHERE lyrics like '%%%s%%'"
+           (s-replace "'" "''" lyrics))))
 
 (defun versuri--db-artists-like (artist)
   "Retrieve all entries that contain artists like ARTIST."
   (versuri--db-read
-   (format "SELECT * from lyrics WHERE artist like '%%%s%%'" artist)))
+   (format "SELECT * from lyrics WHERE artist like '%%%s%%'"
+           (s-replace "'" "''" artist))))
 
 (defun versuri--db-all-entries ()
   "Select everything from the database."
