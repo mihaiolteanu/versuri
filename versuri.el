@@ -379,8 +379,10 @@ Sync call! Depending on the number of entries in the SONGS list,
 it can take a while.  In the meantime, Emacs will be blocked.
 Better use it while on a coffee break."
   (dolist (song songs)
+    (message (format "%s - %s" (car song) (cadr song)))
     (versuri-save (car song) (cadr song))
-    (sleep-for (random max-timeout))))
+    (sleep-for (random max-timeout)))
+  (message "Done."))
 
 (provide 'versuri)
 
