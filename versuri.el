@@ -4,7 +4,7 @@
 
 ;; Author: Mihai Olteanu <mihai_olteanu@fastmail.fm>
 ;; Version: 1.0
-;; Package-Requires: ((emacs "26.1") (dash "2.16.0") (request "0.3.0") (anaphora "1.0.4") (esxml "0.1.0") (s "1.12.0") (ivy "0.11.0"))
+;; Package-Requires: ((emacs "26.1") (dash "2.16.0") (request "0.3.0") (anaphora "1.0.4") (esxml "0.1.0") (s "1.12.0") (esqlite "0.3.1") (ivy "0.11.0"))
 ;; Keywords: multimedia
 ;; URL: https://github.com/mihaiolteanu/versuri/
 
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -212,11 +212,11 @@ above parameters."
   "-" "div.lyrics p")
 
 (versuri-add-website "songlyrics"
-  "http://www.songlyrics.com/${artist}/${song}-lyrics/"
+  "https://www.songlyrics.com/${artist}/${song}-lyrics/"
   "-" "p#songLyricsDiv")
 
 (versuri-add-website "metrolyrics"
-  "http://www.metrolyrics.com/${song}-lyrics-${artist}.html"
+  "https://www.metrolyrics.com/${song}-lyrics-${artist}.html"
   "-" "p.verse")
 
 (versuri-add-website "musixmatch"
@@ -379,7 +379,7 @@ Sync call! Depending on the number of entries in the SONGS list,
 it can take a while.  In the meantime, Emacs will be blocked.
 Better use it while on a coffee break."
   (dolist (song songs)
-    (message (format "%s - %s" (car song) (cadr song)))
+    (message "%s - %s" (car song) (cadr song))
     (versuri-save (car song) (cadr song))
     (sleep-for (random max-timeout)))
   (message "Done."))
