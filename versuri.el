@@ -4,7 +4,7 @@
 
 ;; Author: Mihai Olteanu <mihai_olteanu@fastmail.fm>
 ;; Version: 1.0
-;; Package-Requires: ((emacs "26.1") (dash "2.16.0") (request "0.3.0") (anaphora "1.0.4") (esxml "0.1.0") (s "1.12.0") (esqlite "0.3.1") (ivy "0.11.0"))
+;; Package-Requires: ((emacs "26.1") (dash "2.16.0") (request "0.3.0") (anaphora "1.0.4") (esxml-query "0.1.0") (s "1.12.0") (esqlite "0.3.1") (ivy "0.11.0"))
 ;; Keywords: multimedia
 ;; URL: https://github.com/mihaiolteanu/versuri/
 
@@ -43,7 +43,7 @@
 (require 'dash)
 (require 'request)
 (require 'anaphora)
-(require 'esxml)
+(require 'esxml-query)
 (require 's)
 (require 'esqlite)
 (require 'ivy)
