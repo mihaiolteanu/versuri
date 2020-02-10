@@ -51,15 +51,15 @@
 (defconst versuri--db-stream
   (let ((db (concat (xdg-config-home) "/versuri.db")))
     (esqlite-execute db
-     (concat "CREATE TABLE IF NOT EXISTS lyrics ("
-             "id     INTEGER PRIMARY KEY AUTOINCREMENT "
-             "               UNIQUE "
-             "               NOT NULL, "
-             "artist TEXT    NOT NULL "
-             "               COLLATE NOCASE, "
-             "song   TEXT    NOT NULL "
-             "               COLLATE NOCASE, "
-             "lyrics TEXT    COLLATE NOCASE);"))
+                     (concat "CREATE TABLE IF NOT EXISTS lyrics ("
+                             "id     INTEGER PRIMARY KEY AUTOINCREMENT "
+                             "               UNIQUE "
+                             "               NOT NULL, "
+                             "artist TEXT    NOT NULL "
+                             "               COLLATE NOCASE, "
+                             "song   TEXT    NOT NULL "
+                             "               COLLATE NOCASE, "
+                             "lyrics TEXT    COLLATE NOCASE);"))
     (esqlite-stream-open db))
   "The storage place of all successfully retrieved lyrics.
 An empty table and a new db file is created on the first usage.")
@@ -94,8 +94,8 @@ An empty table and a new db file is created on the first usage.")
 (defun versuri--db-save-lyrics (artist song lyrics)
   "Save the LYRICS for ARTIST and SONG in the database."
   (esqlite-stream-execute versuri--db-stream
-   (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
-           artist song (s-trim lyrics))))
+                          (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
+                                  artist song (s-trim lyrics))))
 
 (defun versuri-delete-lyrics (artist song)
   "Remove entry for ARTIST and SONG form the database."
@@ -136,24 +136,24 @@ the STR matches multiple lines in the lyrics."
          (mapcan
           (lambda (song)
             (mapcar (lambda (verse)
-                 (list
-                  ;; Build a table of artist/song/verse with padding.
-                  (format (s-format  "%-$0s   %-$1s   %s" 'elt
-                                     ;; Add the padding
-                                     `(,artist-max-len ,song-max-len))
-                          ;; Add the actual artist, song and verse.
-                          (cadr song) (caddr song) verse)
-                  ;; Artist and song, recoverable in :action lambda.
-                  (cadr song) (caddr song)))
-               ;; Go through all the verses in the lyrics column for each entry.
-               (if (not (or (seq-empty-p str)
-                            (s-equals-p " " (substring str 0 1))))
-                   (seq-uniq
-                    (mapcan (lambda (line)
-                              (s-match (format ".*%s.*" str) line))
-                            (s-lines (cadddr song))))
-                 ;; First line of the lyrics.
-                 (list (car (s-lines (cadddr song)))))))
+                      (list
+                       ;; Build a table of artist/song/verse with padding.
+                       (format (s-format  "%-$0s   %-$1s   %s" 'elt
+                                          ;; Add the padding
+                                          `(,artist-max-len ,song-max-len))
+                               ;; Add the actual artist, song and verse.
+                               (cadr song) (caddr song) verse)
+                       ;; Artist and song, recoverable in :action lambda.
+                       (cadr song) (caddr song)))
+                    ;; Go through all the verses in the lyrics column for each entry.
+                    (if (not (or (seq-empty-p str)
+                                 (s-equals-p " " (substring str 0 1))))
+                        (seq-uniq
+                         (mapcan (lambda (line)
+                                   (s-match (format ".*%s.*" str) line))
+                                 (s-lines (cadddr song))))
+                      ;; First line of the lyrics.
+                      (list (car (s-lines (cadddr song)))))))
           ;; All entries in db that contain str in the lyrics column.
           entries)))
      :action (lambda (song)
@@ -204,28 +204,28 @@ above parameters."
       (push new-website versuri--websites))))
 
 (versuri-add-website "makeitpersonal"
-  "https://makeitpersonal.co/lyrics?artist=${artist}&title=${song}"
-  "-" "p")
+                     "https://makeitpersonal.co/lyrics?artist=${artist}&title=${song}"
+                     "-" "p")
 
 (versuri-add-website "genius"
-  "https://genius.com/${artist}-${song}-lyrics"
-  "-" "div.lyrics p")
+                     "https://genius.com/${artist}-${song}-lyrics"
+                     "-" "div.lyrics p")
 
 (versuri-add-website "songlyrics"
-  "https://www.songlyrics.com/${artist}/${song}-lyrics/"
-  "-" "p#songLyricsDiv")
+                     "https://www.songlyrics.com/${artist}/${song}-lyrics/"
+                     "-" "p#songLyricsDiv")
 
 (versuri-add-website "metrolyrics"
-  "https://www.metrolyrics.com/${song}-lyrics-${artist}.html"
-  "-" "p.verse")
+                     "https://www.metrolyrics.com/${song}-lyrics-${artist}.html"
+                     "-" "p.verse")
 
 (versuri-add-website "musixmatch"
-  "https://www.musixmatch.com/lyrics/${artist}/${song}"
-  "-" "p.mxm-lyrics__content span")
+                     "https://www.musixmatch.com/lyrics/${artist}/${song}"
+                     "-" "p.mxm-lyrics__content span")
 
 (versuri-add-website "azlyrics"
-  "https://www.azlyrics.com/lyrics/${artist}/${song}.html"
-  "" "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")
+                     "https://www.azlyrics.com/lyrics/${artist}/${song}.html"
+                     "" "div.container.main-page div.row div:nth-child(2) div:nth-of-type(5)")
 
 (defun versuri-find-website (name)
   "Find a website by NAME in the list of defined websites."
@@ -255,18 +255,18 @@ are cleaned up according to the site specific URL format rules."
 `callback' is called with the response data or with nil in case
 of an error."
   (request (versuri--build-url website artist song)
-           :parser 'buffer-string
-           :sync nil
-           :success (cl-function
-                     (lambda (&key data &allow-other-keys)
-                       (funcall callback data)))
-           :error (lambda ()
-                    ;; Website does not have the lyrics for this song
-                    (funcall callback nil))
-           :status-code
-           '((403 . (lambda ()
-                      ;; Nothing to do if you got banned.
-                      (funcall callback nil)))))
+    :parser 'buffer-string
+    :sync nil
+    :success (cl-function
+              (lambda (&key data &allow-other-keys)
+                (funcall callback data)))
+    :error (lambda ()
+             ;; Website does not have the lyrics for this song
+             (funcall callback nil))
+    :status-code
+    '((403 . (lambda ()
+               ;; Nothing to do if you got banned.
+               (funcall callback nil)))))
   nil)
 
 (defun versuri--parse (website html)
@@ -304,18 +304,18 @@ the call with the remaining websites."
       (funcall callback lyrics)
     (when-let (website (nth (random (length websites))
                             websites))
-        (versuri--request website artist song
-          (lambda (resp)
-            (if (and resp
-                     ;; makeitpersonal
-                     (not (s-contains? "Sorry, We don't have lyrics" resp)))
-                ;; Positive response
-                (when-let (lyrics (versuri--parse website resp))
-                  (versuri--db-save-lyrics artist song lyrics)
-                  (versuri-lyrics artist song callback))
-              ;; Lyrics not found, try another website.
-              (versuri-lyrics artist song callback
-                              (-remove-item website websites))))))))
+      (versuri--request website artist song
+                        (lambda (resp)
+                          (if (and resp
+                                   ;; makeitpersonal
+                                   (not (s-contains? "Sorry, We don't have lyrics" resp)))
+                              ;; Positive response
+                              (when-let (lyrics (versuri--parse website resp))
+                                (versuri--db-save-lyrics artist song lyrics)
+                                (versuri-lyrics artist song callback))
+                            ;; Lyrics not found, try another website.
+                            (versuri-lyrics artist song callback
+                                            (-remove-item website websites))))))))
 
 (defun versuri-display (artist song)
   "Search and display the lyrics for ARTIST and SONG in a buffer.
@@ -336,30 +336,30 @@ displayed again in a new buffer.  Not all websites have the same
 lyrics for the same song.  Some might be incomplete, some might
 be ugly."
   (versuri-lyrics artist song
-    (lambda (lyrics)
-      (let ((name (format "%s - %s | lyrics" artist song)))
-        (aif (get-buffer name)
-            (switch-to-buffer it)
-          (let ((b (generate-new-buffer name)))
-            (with-current-buffer b
-              (insert (format "%s - %s\n\n" artist song))
-              (insert lyrics)
-              (read-only-mode)
-              (local-set-key (kbd "q") 'kill-current-buffer)
-              ;; Forget about these lyrics.
-              (local-set-key (kbd "x")
-                             (lambda ()
-                               (interactive)
-                               (versuri-delete-lyrics artist song)
-                               (kill-buffer it)))
-              ;; Find another website for these lyrics.
-              (local-set-key (kbd "r")
-                             (lambda ()
-                               (interactive)
-                               (versuri-delete-lyrics artist song)
-                               (kill-buffer it)
-                               (versuri-display artist song))))
-            (switch-to-buffer b)))))))
+                  (lambda (lyrics)
+                    (let ((name (format "%s - %s | lyrics" artist song)))
+                      (aif (get-buffer name)
+                          (switch-to-buffer it)
+                        (let ((b (generate-new-buffer name)))
+                          (with-current-buffer b
+                            (insert (format "%s - %s\n\n" artist song))
+                            (insert lyrics)
+                            (read-only-mode)
+                            (local-set-key (kbd "q") 'kill-current-buffer)
+                            ;; Forget about these lyrics.
+                            (local-set-key (kbd "x")
+                                           (lambda ()
+                                             (interactive)
+                                             (versuri-delete-lyrics artist song)
+                                             (kill-buffer it)))
+                            ;; Find another website for these lyrics.
+                            (local-set-key (kbd "r")
+                                           (lambda ()
+                                             (interactive)
+                                             (versuri-delete-lyrics artist song)
+                                             (kill-buffer it)
+                                             (versuri-display artist song))))
+                          (switch-to-buffer b)))))))
 
 (defun versuri-save (artist song)
   "Search and save the lyrics for ARTIST and SONG.
