@@ -49,7 +49,7 @@
 (require 'ivy)
 
 (defconst versuri--db-stream
-  (let ((db (concat (xdg-config-home) "/versuri.db")))
+  (let ((db (expand-file-name "/versuri.db" (xdg-config-home))))
     (esqlite-execute db
                      (concat "CREATE TABLE IF NOT EXISTS lyrics ("
                              "id     INTEGER PRIMARY KEY AUTOINCREMENT "
