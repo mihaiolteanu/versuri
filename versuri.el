@@ -95,7 +95,9 @@ An empty table and a new db file is created on the first usage.")
   "Save the LYRICS for ARTIST and SONG in the database."
   (esqlite-stream-execute versuri--db-stream
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
-           artist song (s-trim lyrics))))
+           (esqlite-escape-string artist ?\")
+           (esqlite-escape-string song ?\")
+           (esqlite-escape-string (s-trim lyrics) ?\"))))
 
 (defun versuri-delete-lyrics (artist song)
   "Remove entry for ARTIST and SONG form the database."
