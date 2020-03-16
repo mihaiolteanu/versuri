@@ -48,25 +48,34 @@
 (require 'esqlite)
 (require 'ivy)
 
-(defconst versuri--db-stream
-  (let ((db (concat (xdg-config-home) "/versuri.db")))
-    (esqlite-execute db
-     (concat "CREATE TABLE IF NOT EXISTS lyrics ("
-             "id     INTEGER PRIMARY KEY AUTOINCREMENT "
-             "               UNIQUE "
-             "               NOT NULL, "
-             "artist TEXT    NOT NULL "
-             "               COLLATE NOCASE, "
-             "song   TEXT    NOT NULL "
-             "               COLLATE NOCASE, "
-             "lyrics TEXT    COLLATE NOCASE);"))
-    (esqlite-stream-open db))
-  "The storage place of all successfully retrieved lyrics.
-An empty table and a new db file is created on the first usage.")
+(defconst versuri--db-file-name "/versuri.db"
+  "Name of the db containing all the lyrics.")
+
+(defconst versuri--db-process nil
+  "The process containing the opened db stream.")
+
+(defun versuri--db-stream ()
+  "Return the db stream or create and open it if doesn't exist."
+  (unless versuri--db-process
+    (let ((db-path (concat (xdg-config-home)
+                           versuri--db-file-name)))
+      (esqlite-execute db-path
+        (concat "CREATE TABLE IF NOT EXISTS lyrics ("
+                "id     INTEGER PRIMARY KEY AUTOINCREMENT "
+                "               UNIQUE "
+                "               NOT NULL, "
+                "artist TEXT    NOT NULL "
+                "               COLLATE NOCASE, "
+                "song   TEXT    NOT NULL "
+                "               COLLATE NOCASE, "
+                "lyrics TEXT    COLLATE NOCASE);"))
+      (setf versuri--db-process
+            (esqlite-stream-open db-path))))
+  versuri--db-process)
 
 (defun versuri--db-read (query)
   "Call the QUERY on the database and return the result."
-  (esqlite-stream-read versuri--db-stream query))
+  (esqlite-stream-read (versuri--db-stream) query))
 
 (defun versuri--db-get-lyrics (artist song)
   "Retrieve the stored lyrics for ARTIST and SONG."
@@ -93,7 +102,7 @@ An empty table and a new db file is created on the first usage.")
 
 (defun versuri--db-save-lyrics (artist song lyrics)
   "Save the LYRICS for ARTIST and SONG in the database."
-  (esqlite-stream-execute versuri--db-stream
+  (esqlite-stream-execute (versuri--db-stream)
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
            (esqlite-escape-string artist ?\")
            (esqlite-escape-string song ?\")
@@ -103,7 +112,7 @@ An empty table and a new db file is created on the first usage.")
   "Remove entry for ARTIST and SONG form the database."
   (print (format "%s - %s" artist song))
   (esqlite-stream-execute
-   versuri--db-stream
+   (versuri--db-stream)
    (format "DELETE FROM lyrics WHERE artist=\"%s\" and song=\"%s\""
            artist song)))
 
