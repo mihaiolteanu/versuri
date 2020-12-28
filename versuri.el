@@ -266,18 +266,18 @@ are cleaned up according to the site specific URL format rules."
 `callback' is called with the response data or with nil in case
 of an error."
   (request (versuri--build-url website artist song)
-           :parser 'buffer-string
-           :sync nil
-           :success (cl-function
-                     (lambda (&key data &allow-other-keys)
-                       (funcall callback data)))
-           :error (lambda ()
-                    ;; Website does not have the lyrics for this song
-                    (funcall callback nil))
-           :status-code
-           '((403 . (lambda ()
-                      ;; Nothing to do if you got banned.
-                      (funcall callback nil)))))
+    :parser 'buffer-string
+    :sync nil
+    :success (cl-function
+              (lambda (&key data &allow-other-keys)
+                (funcall callback data)))
+    :error (lambda (&rest _)
+             ;; Website does not have the lyrics for this song
+             (funcall callback nil))
+    :status-code
+    `((403 . ,(lambda (&rest _)
+				;; Nothing to do if you got banned.
+				(funcall callback nil)))))
   nil)
 
 (defun versuri--parse (website html)
@@ -313,20 +313,21 @@ every request. If the lyrics is not found on that website, repeat
 the call with the remaining websites."
   (if-let (lyrics (versuri--db-get-lyrics artist song))
       (funcall callback lyrics)
-    (when-let (website (nth (random (length websites))
-                            websites))
-        (versuri--request website artist song
-          (lambda (resp)
-            (if (and resp
-                     ;; makeitpersonal
-                     (not (s-contains? "Sorry, We don't have lyrics" resp)))
-                ;; Positive response
-                (when-let (lyrics (versuri--parse website resp))
-                  (versuri--db-save-lyrics artist song lyrics)
-                  (versuri-lyrics artist song callback))
-              ;; Lyrics not found, try another website.
-              (versuri-lyrics artist song callback
-                              (-remove-item website websites))))))))
+    (if-let (website (nth (random (length websites))
+                          websites))
+		(versuri--request website artist song
+						  (lambda (resp)
+							(if (and resp
+									 ;; makeitpersonal
+									 (not (s-contains? "Sorry, We don't have lyrics" resp)))
+								;; Positive response
+								(when-let (lyrics (versuri--parse website resp))
+								  (versuri--db-save-lyrics artist song lyrics)
+								  (versuri-lyrics artist song callback))
+							  ;; Lyrics not found, try another website.
+							  (versuri-lyrics artist song callback
+											  (-remove-item website websites)))))
+	  (message (format "No lyrics for %s (%s) found on searched websites!" song artist)))))
 
 (defun versuri-display (artist song)
   "Search and display the lyrics for ARTIST and SONG in a buffer.
