@@ -321,9 +321,12 @@ the call with the remaining websites."
 									 ;; makeitpersonal
 									 (not (s-contains? "Sorry, We don't have lyrics" resp)))
 								;; Positive response
-								(when-let (lyrics (versuri--parse website resp))
-								  (versuri--db-save-lyrics artist song lyrics)
-								  (versuri-lyrics artist song callback))
+								(if-let (lyrics (versuri--parse website resp))
+									(progn
+									  (versuri--db-save-lyrics artist song lyrics)
+									  (versuri-lyrics artist song callback))
+								  ;; Lyrics not found, try another website.
+								  (versuri-lyrics artist song callback (-remove-item website websites)))
 							  ;; Lyrics not found, try another website.
 							  (versuri-lyrics artist song callback
 											  (-remove-item website websites)))))
