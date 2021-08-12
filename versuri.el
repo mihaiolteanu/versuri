@@ -273,11 +273,7 @@ of an error."
                 (funcall callback data)))
     :error (lambda (&rest _)
              ;; Website does not have the lyrics for this song
-             (funcall callback nil))
-    :status-code
-    `((403 . ,(lambda (&rest _)
-				;; Nothing to do if you got banned.
-				(funcall callback nil)))))
+             (funcall callback nil)))
   nil)
 
 (defun versuri--parse (website html)
