@@ -170,9 +170,7 @@ the STR matches multiple lines in the lyrics."
          (song (when res
                  (completing-read "Select Lyrics: " res))))
     (when song
-      (let ((s (assoc song res #'string=)))
-        (versuri-display (cadr s)
-                         (caddr s))))))
+      (cdr (assoc song res #'string=)))))
 
 (defalias 'versuri-ivy-search #'versuri-search)
 
