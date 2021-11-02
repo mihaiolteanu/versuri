@@ -356,8 +356,9 @@ be ugly."
             (switch-to-buffer it)
           (let ((b (generate-new-buffer name)))
             (with-current-buffer b
-              (insert (format "%s - %s\n\n" artist song))
-              (insert lyrics)
+              (save-excursion
+                (insert (format "%s - %s\n\n" artist song))
+                (insert lyrics))
               (read-only-mode)
               (local-set-key (kbd "q") 'kill-current-buffer)
               ;; Forget about these lyrics.
