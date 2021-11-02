@@ -5,7 +5,7 @@ _musixmatch_, _azlyrics_.
 
 - Backed up with a local database.
 
-- Search through the database interactively with ivy.
+- Search through the database interactively.
 
 - Display lyrics in a text buffer or save them for later use.
 
@@ -51,20 +51,22 @@ Beware! This will block Emacs.
 ## Search artist and song from known lyrics
 
 Search for all lyrics in the database that match a given string and
-interactively select one of the entries with ivy. With a space before the
-string, select from all artists that matches the string. With an empty string,
-select from all the songs in the database.
+interactively select one of the entries with `completing-read`. With a
+space before the string, select from all artists that matches the
+string. With an empty string, select from all the songs in the
+database.
 
-For example, this will search for all songs that contain "tonight" in their lyrics. Further
-filtering available thanks to ivy.
+For example, this will search for all songs that contain "tonight" in
+their lyrics. Further filtering available thanks to a completion UI
+like ivy, icomplete, etc.
 
 ```emacs-lisp
-(versuri-ivy-search "tonight")
+(versuri-search "tonight")
 ```
 ![image](https://user-images.githubusercontent.com/8273519/73678593-595b2780-46c1-11ea-9370-c53a0bb1158c.png)
 
-`versuri-ivy-search` is interactive, so the search string can be given in the
-minibuffer as well.
+`versuri-search` is interactive, so the search string can be given in
+the minibuffer as well.
 
 ![image](https://user-images.githubusercontent.com/8273519/73678604-5f510880-46c1-11ea-95b0-df43d1f4fb66.png)
 
@@ -98,6 +100,10 @@ will be implemented.
 
 # Complete API
 
+**versuri-mode**
+
+    Major mode for versuri lyrics buffers.
+
 **versuri-display** (artist song)
 
     Search and display the lyrics for ARTIST and SONG in a buffer.
@@ -129,11 +135,12 @@ will be implemented.
 
     Remove entry for ARTIST and SONG form the database.
 
-**versuri-ivy-search** (str)
+**versuri-search** (str)
 
     Search the database for all entries that match STR.
-    Use ivy to let the user select one of the entries and return it.
-    Each entry contains the artist name, song name and a verse line.
+    Use completing-read to let the user select one of the entries
+    and return it.  Each entry contains the artist name, song name
+    and a verse line.
 
     If STR is empty, this is a search through all the entries in the
     database.
