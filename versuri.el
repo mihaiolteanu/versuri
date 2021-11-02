@@ -331,6 +331,10 @@ the call with the remaining websites."
               (versuri-lyrics artist song callback
                               (-remove-item website websites))))))))
 
+(define-derived-mode versuri-mode fundamental-mode "versuri"
+  "Major mode for versuri lyrics buffers."
+  (read-only-mode))
+
 (defun versuri-display (artist song)
   "Search and display the lyrics for ARTIST and SONG in a buffer.
 
@@ -359,7 +363,7 @@ be ugly."
               (save-excursion
                 (insert (format "%s - %s\n\n" artist song))
                 (insert lyrics))
-              (read-only-mode)
+              (versuri-mode)
               (local-set-key (kbd "q") 'kill-current-buffer)
               ;; Forget about these lyrics.
               (local-set-key (kbd "x")
