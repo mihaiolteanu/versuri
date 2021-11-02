@@ -4,7 +4,7 @@
 
 ;; Author: Mihai Olteanu <mihai_olteanu@fastmail.fm>
 ;; Version: 1.0
-;; Package-Requires: ((emacs "26.1") (dash "2.16.0") (request "0.3.0") (anaphora "1.0.4") (esxml "0.1.0") (s "1.12.0") (esqlite "0.3.1") (ivy "0.11.0"))
+;; Package-Requires: ((emacs "26.1") (dash "2.16.0") (request "0.3.0") (anaphora "1.0.4") (esxml "0.1.0") (s "1.12.0") (esqlite "0.3.1"))
 ;; Keywords: multimedia
 ;; URL: https://github.com/mihaiolteanu/versuri/
 
@@ -30,7 +30,7 @@
 ;; - makeitpersonal, genius, songlyrics, metrolyrics, musixmatch and azlyrics
 ;; are all supported
 ;; - add new websites or modify existing ones with `versuri-add-website'
-;; - search the database with ivy-read and either for all the entries in the
+;; - search the database with `completing-read' and either for all the entries in the
 ;; database, all the entries for a given artist or all the entries where the
 ;; lyrics field contains a given string.
 ;; - synchronous bulk request for lyrics for a given list of songs.
@@ -46,7 +46,6 @@
 (require 'esxml-query)
 (require 's)
 (require 'esqlite)
-(require 'ivy)
 
 (defconst versuri--db-file-name "/versuri.db"
   "Name of the db containing all the lyrics.")
@@ -116,10 +115,46 @@
    (format "DELETE FROM lyrics WHERE artist=\"%s\" and song=\"%s\""
            artist song)))
 
-(defun versuri-ivy-search (str)
+(defun versuri--do-search (str)
+  (let ((entries (cond ((s-blank? (s-trim str))
+                        (versuri--db-all-entries))
+                       ((s-equals-p " " (substring str 0 1))
+                        (versuri--db-artists-like (s-trim str)))
+                       (t (versuri--db-search-lyrics-like str)))))
+    (cl-multiple-value-bind (artist-max-len song-max-len)
+        (cl-loop for entry in entries
+                 maximize (length (cadr entry)) into artist
+                 maximize (length (caddr entry)) into song
+                 finally (return (cl-values artist song)))
+      (mapcan
+       (lambda (song)
+         (mapcar (lambda (verse)
+                   (list
+                    ;; Build a table of artist/song/verse with padding.
+                    (format (s-format  "%-$0s   %-$1s   %s" 'elt
+                                       ;; Add the padding
+                                       `(,artist-max-len ,song-max-len))
+                            ;; Add the actual artist, song and verse.
+                            (cadr song) (caddr song) verse)
+                    ;; Artist and song, recoverable in :action lambda.
+                    (cadr song) (caddr song)))
+                 ;; Go through all the verses in the lyrics column for each entry.
+                 (if (not (or (seq-empty-p str)
+                              (s-equals-p " " (substring str 0 1))))
+                     (seq-uniq
+                      (mapcan (lambda (line)
+                                (s-match (format ".*%s.*" str) line))
+                              (s-lines (cadddr song))))
+                   ;; First line of the lyrics.
+                   (list (car (s-lines (cadddr song)))))))
+       ;; All entries in db that contain str in the lyrics column.
+       entries))))
+
+(defun versuri-search (str)
   "Search the database for all entries that match STR.
-Use ivy to let the user select one of the entries and return it.
-Each entry contains the artist name, song name and a verse line.
+Use `completing-read' to let the user select one of the entries
+and return it.  Each entry contains the artist name, song name
+and a verse line.
 
 If STR is empty, this is a search through all the entries in the
 database.
@@ -131,45 +166,15 @@ Otherwise, this is a search for all the lyrics that contain STR.
 There can be more entries with the same artist and song name if
 the STR matches multiple lines in the lyrics."
   (interactive "MSearch lyrics: ")
-  (let (res)
-    (ivy-read
-     "Select Lyrics: "
-     (let ((entries (cond ((s-blank? (s-trim str))
-                           (versuri--db-all-entries))
-                          ((s-equals-p " " (substring str 0 1))
-                           (versuri--db-artists-like (s-trim str)))
-                          (t (versuri--db-search-lyrics-like str)))))
-       (cl-multiple-value-bind (artist-max-len song-max-len)
-           (cl-loop for entry in entries
-                    maximize (length (cadr entry)) into artist
-                    maximize (length (caddr entry)) into song
-                    finally (return (cl-values artist song)))
-         (mapcan
-          (lambda (song)
-            (mapcar (lambda (verse)
-                 (list
-                  ;; Build a table of artist/song/verse with padding.
-                  (format (s-format  "%-$0s   %-$1s   %s" 'elt
-                                     ;; Add the padding
-                                     `(,artist-max-len ,song-max-len))
-                          ;; Add the actual artist, song and verse.
-                          (cadr song) (caddr song) verse)
-                  ;; Artist and song, recoverable in :action lambda.
-                  (cadr song) (caddr song)))
-               ;; Go through all the verses in the lyrics column for each entry.
-               (if (not (or (seq-empty-p str)
-                            (s-equals-p " " (substring str 0 1))))
-                   (seq-uniq
-                    (mapcan (lambda (line)
-                              (s-match (format ".*%s.*" str) line))
-                            (s-lines (cadddr song))))
-                 ;; First line of the lyrics.
-                 (list (car (s-lines (cadddr song)))))))
-          ;; All entries in db that contain str in the lyrics column.
-          entries)))
-     :action (lambda (song)
-               (setf res (list (cadr song) (caddr song)))))
-    res))
+  (let* ((res (versuri--do-search str))
+         (song (when res
+                 (completing-read "Select Lyrics: " res))))
+    (when song
+      (let ((s (assoc song res #'string=)))
+        (versuri-display (cadr s)
+                         (caddr s))))))
+
+(defalias 'versuri-ivy-search #'versuri-search)
 
 (defconst versuri--websites nil
   "A list of all the websites where lyrics can be searched.")
