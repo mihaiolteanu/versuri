@@ -104,6 +104,10 @@ will be implemented.
 
     Major mode for versuri lyrics buffers.
 
+**versuri-lyrics-title-face** and **versuri-lyrics-text-face**
+
+    Faces used in the versuri buffers for the lyric title and text.
+
 **versuri-display** (artist song)
 
     Search and display the lyrics for ARTIST and SONG in a buffer.

@@ -352,6 +352,14 @@ incomplete, some might be ugly."
   (kill-buffer versuri--buffer)
   (versuri-display versuri--artist versuri--song))
 
+(defface versuri-lyrics-title
+  '((t :inherit default :height 1.6))
+  "Face for the lyrics title in `versuri-mode'.")
+
+(defface versuri-lyrics-text
+  '((t :inherit default))
+  "Face for the lyrics text in `versuri-mode'.")
+
 (defvar versuri-mode-map
   (let ((m (make-sparse-keymap)))
     (define-key m (kbd "q") #'kill-current-buffer)
@@ -381,8 +389,12 @@ already exists, switch to it and don't create a new buffer."
           (let ((b (generate-new-buffer name)))
             (with-current-buffer b
               (save-excursion
-                (insert (format "%s - %s\n\n" artist song))
-                (insert lyrics))
+                (insert
+                 (propertize (format "%s - %s\n\n" artist song)
+                             'face 'versuri-lyrics-title))
+                (insert
+                 (propertize lyrics
+                             'face 'versuri-lyrics-text)))
               (versuri-mode)
               (setq-local versuri--artist artist)
               (setq-local versuri--song song)
