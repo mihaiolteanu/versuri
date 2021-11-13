@@ -377,6 +377,7 @@ incomplete, some might be ugly."
     ;; don't allow undoing the initial buffer insertion
     (buffer-disable-undo)
     (insert lyric)
+    (set-buffer-modified-p nil)
     (goto-char (point-min))
     (buffer-enable-undo)
     (versuri-edit-mode)
