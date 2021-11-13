@@ -398,7 +398,7 @@ already exists, switch to it and don't create a new buffer."
               (versuri-mode)
               (setq-local versuri--artist artist)
               (setq-local versuri--song song)
-              (setq-local versuri--buffer it))
+              (setq-local versuri--buffer b))
             (switch-to-buffer b)))))))
 
 (defun versuri-save (artist song)
