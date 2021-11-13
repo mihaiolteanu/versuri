@@ -331,6 +331,11 @@ the call with the remaining websites."
               (versuri-lyrics artist song callback
                               (-remove-item website websites))))))))
 
+(defun versuri-add-lyric (artist song)
+  "Pop a buffer to write a lyric for SONG by ARTIST."
+  (interactive "Martist: \nMsong: ")
+  (versuri--pop-edit-buffer artist song))
+
 (defvar versuri--artist nil)
 (defvar versuri--song nil)
 (defvar versuri--buffer nil)
@@ -352,22 +357,13 @@ incomplete, some might be ugly."
   (kill-buffer versuri--buffer)
   (versuri-display versuri--artist versuri--song))
 
-(defun versuri-lyric-edit ()
-  "Edit the current lyric in a dedicated buffer."
-  (interactive)
-  (let* ((artist versuri--artist)
-         (song versuri--song)
-         (lyric-buffer versuri--buffer)
-         (buffer (generate-new-buffer (format "Edit: %s - %s"
-                                              artist song)))
-         ;; avoid an async call and just copy the lyric from the
-         ;; current buffer.
-         (lyric (save-excursion
-                  (goto-char (point-min))
-                  (forward-line +2)
-                  (buffer-substring-no-properties (point)
-                                                  (point-max)))))
+(defun versuri--pop-edit-buffer (artist song &optional lyric-buffer lyric)
+  "Pop a buffer to edit the LYRICS for SONG by ARTIST.
+LYRIC-BUFFER is a `versuri-edit-mode' buffer to sync on save."
+  (let ((buffer (generate-new-buffer (format "Edit: %s - %s"
+                                             artist song))))
     (pop-to-buffer buffer)
+    (versuri-edit-mode)
     ;; make the buffer backed by a temporary file so Emacs knows
     ;; wether the contents have been modified or not.  Trick stolen
     ;; from poporg.el
@@ -376,11 +372,11 @@ incomplete, some might be ugly."
       (rename-buffer buf-name t))
     ;; don't allow undoing the initial buffer insertion
     (buffer-disable-undo)
-    (insert lyric)
+    (when lyric
+      (insert lyric))
     (set-buffer-modified-p nil)
     (goto-char (point-min))
     (buffer-enable-undo)
-    (versuri-edit-mode)
     (setq-local versuri--artist artist)
     (setq-local versuri--song song)
     (setq-local versuri--buffer lyric-buffer)
@@ -388,6 +384,18 @@ incomplete, some might be ugly."
     (add-hook 'kill-buffer-hook (lambda ()
                                   (delete-file buffer-file-name))
               nil t)))
+
+(defun versuri-lyric-edit ()
+  "Edit the current lyric in a dedicated buffer."
+  (interactive)
+  (versuri--pop-edit-buffer versuri--artist versuri--song versuri--buffer
+                            (save-excursion
+                              ;; avoid an async call and just copy the
+                              ;; lyric from the current buffer.
+                              (goto-char (point-min))
+                              (forward-line +2)
+                              (buffer-substring-no-properties (point)
+                                                              (point-max)))))
 
 (defface versuri-lyrics-title
   '((t :inherit default :height 1.6))
@@ -425,13 +433,14 @@ incomplete, some might be ugly."
     (versuri-delete-lyrics versuri--artist versuri--song)
     (versuri--db-save-lyrics versuri--artist versuri--song lyric)
     ;; update the lyric in the original buffer
-    (with-current-buffer versuri--buffer
-      (let ((inhibit-read-only t))
-        (save-excursion
-          (goto-char (point-min))
-          (forward-line +2)
-          (delete-region (point) (point-max))
-          (insert lyric))))
+    (when versuri--buffer
+      (with-current-buffer versuri--buffer
+        (let ((inhibit-read-only t))
+          (save-excursion
+            (goto-char (point-min))
+            (forward-line +2)
+            (delete-region (point) (point-max))
+            (insert lyric)))))
     (message "Saved %s - %s" versuri--artist versuri--song)))
 
 (define-derived-mode versuri-edit-mode text-mode "versuri edit"
