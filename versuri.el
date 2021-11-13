@@ -118,6 +118,15 @@ Set ARTIST to NEW-ARTIST and SONG to NEW-SONG."
            (esqlite-escape-string artist ?\")
            (esqlite-escape-string song ?\"))))
 
+(defun versuri--db-update-lyric (artist song lyric)
+  "Update the LYRIC for ARTIST and SONG in the database."
+  (esqlite-stream-execute
+   (versuri--db-stream)
+   (format "UPDATE lyrics set lyrics = \"%s\" where artist = \"%s\" and song = \"%s\""
+           (esqlite-escape-string (s-trim lyric) ?\")
+           (esqlite-escape-string artist ?\")
+           (esqlite-escape-string song ?\"))))
+
 (defun versuri-delete-lyrics (artist song)
   "Remove entry for ARTIST and SONG form the database."
   (print (format "%s - %s" artist song))
@@ -463,8 +472,7 @@ the db."
                  (widen)
                  (buffer-substring-no-properties (point-min)
                                                  (point-max)))))
-    (versuri-delete-lyrics versuri--artist versuri--song)
-    (versuri--db-save-lyrics versuri--artist versuri--song lyric)
+    (versuri--db-update-lyric versuri--artist versuri--song lyric)
     ;; update the lyric in the original buffer
     (when versuri--buffer
       (with-current-buffer versuri--buffer
