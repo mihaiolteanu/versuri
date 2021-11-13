@@ -107,6 +107,17 @@
            (esqlite-escape-string song ?\")
            (esqlite-escape-string (s-trim lyrics) ?\"))))
 
+(defun versuri--db-update-lyrics-meta (artist song new-artist new-song)
+  "Update the metadata for the song.
+Set ARTIST to NEW-ARTIST and SONG to NEW-SONG."
+  (esqlite-stream-execute
+   (versuri--db-stream)
+   (format "UPDATE lyrics SET artist = \"%s\", song = \"%s\" where artist = \"%s\" and song = \"%s\""
+           (esqlite-escape-string new-artist ?\")
+           (esqlite-escape-string new-song ?\")
+           (esqlite-escape-string artist ?\")
+           (esqlite-escape-string song ?\"))))
+
 (defun versuri-delete-lyrics (artist song)
   "Remove entry for ARTIST and SONG form the database."
   (print (format "%s - %s" artist song))
@@ -397,6 +408,27 @@ LYRIC-BUFFER is a `versuri-edit-mode' buffer to sync on save."
                               (buffer-substring-no-properties (point)
                                                               (point-max)))))
 
+(defun versuri-lyric-edit-meta (new-artist new-song)
+  "Change the metadata for the current song.
+NEW-ARTIST is set as the artist and NEW-SONG as the song title in
+the db."
+  (interactive (list (read-string "Artist: " versuri--artist)
+                     (read-string "Song: " versuri--song)))
+  (unless (derived-mode-p 'versuri-mode)
+    (error "Can't edit the lyric outside of `versuri-mode'"))
+  (versuri--db-update-lyrics-meta versuri--artist versuri--song
+                                  new-artist new-song)
+  (setq versuri--artist new-artist
+        versuri--song new-song)
+  (let ((inhibit-read-only t))
+    (save-excursion
+      ;; update the title
+      (goto-char (point-min))
+      (delete-region (point) (line-end-position))
+      (insert (propertize (format "%s - %s" new-artist new-song)
+                          'face 'versuri-lyrics-title))))
+  (rename-buffer (versuri--buffer-name new-artist new-song)))
+
 (defface versuri-lyrics-title
   '((t :inherit default :height 1.6))
   "Face for the lyrics title in `versuri-mode'.")
@@ -411,6 +443,7 @@ LYRIC-BUFFER is a `versuri-edit-mode' buffer to sync on save."
     (define-key m (kbd "x") #'versuri-lyrics-forget)
     (define-key m (kbd "r") #'versuri-lyrics-try-another-site)
     (define-key m (kbd "e") #'versuri-lyric-edit)
+    (define-key m (kbd "E") #'versuri-lyric-edit-meta)
     m)
   "Keymap for `versuri-mode'.")
 
@@ -448,6 +481,10 @@ LYRIC-BUFFER is a `versuri-edit-mode' buffer to sync on save."
   (make-local-variable 'versuri--artist)
   (make-local-variable 'versuri--song))
 
+(defun versuri--buffer-name (artist song)
+  "Compute the buffer name given ARTIST and SONG."
+  (format "%s - %s | lyrics" artist song))
+
 (defun versuri-display (artist song)
   "Search and display the lyrics for ARTIST and SONG in a buffer.
 
@@ -456,7 +493,7 @@ Async call.  When found, the lyrics are inserted in a new
 already exists, switch to it and don't create a new buffer."
   (versuri-lyrics artist song
     (lambda (lyrics)
-      (let ((name (format "%s - %s | lyrics" artist song)))
+      (let ((name (versuri--buffer-name artist song)))
         (aif (get-buffer name)
             (switch-to-buffer it)
           (let ((b (generate-new-buffer name)))
