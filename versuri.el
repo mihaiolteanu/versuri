@@ -383,7 +383,10 @@ incomplete, some might be ugly."
     (setq-local versuri--artist artist)
     (setq-local versuri--song song)
     (setq-local versuri--buffer lyric-buffer)
-    (add-hook 'after-save-hook #'versuri-save-lyric nil t)))
+    (add-hook 'after-save-hook #'versuri-save-lyric nil t)
+    (add-hook 'kill-buffer-hook (lambda ()
+                                  (delete-file buffer-file-name))
+              nil t)))
 
 (defface versuri-lyrics-title
   '((t :inherit default :height 1.6))
