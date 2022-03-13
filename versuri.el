@@ -50,12 +50,12 @@
 (defconst versuri--db-file-name "/versuri.db"
   "Name of the db containing all the lyrics.")
 
-(defconst versuri--db-process nil
-  "The process containing the opened db stream.")
+(defconst versuri--db-file nil
+  "The path to the db.")
 
-(defun versuri--db-stream ()
-  "Return the db stream or create and open it if doesn't exist."
-  (unless versuri--db-process
+(defun versuri--db-file ()
+  "Return the db file or create it if doesn't exist."
+  (unless versuri--db-file
     (let ((db-path (concat (xdg-config-home)
                            versuri--db-file-name)))
       (esqlite-execute db-path
@@ -68,13 +68,12 @@
                 "song   TEXT    NOT NULL "
                 "               COLLATE NOCASE, "
                 "lyrics TEXT    COLLATE NOCASE);"))
-      (setf versuri--db-process
-            (esqlite-stream-open db-path))))
-  versuri--db-process)
+      (setf versuri--db-file db-path)))
+  versuri--db-file)
 
 (defun versuri--db-read (query)
   "Call the QUERY on the database and return the result."
-  (esqlite-stream-read (versuri--db-stream) query))
+  (esqlite-read (versuri--db-file) query))
 
 (defun versuri--db-get-lyrics (artist song)
   "Retrieve the stored lyrics for ARTIST and SONG."
@@ -101,7 +100,7 @@
 
 (defun versuri--db-save-lyrics (artist song lyrics)
   "Save the LYRICS for ARTIST and SONG in the database."
-  (esqlite-stream-execute (versuri--db-stream)
+  (esqlite-execute (versuri--db-file)
    (format "INSERT INTO lyrics(artist,song,lyrics) VALUES(\"%s\", \"%s\", \"%s\")"
            (esqlite-escape-string artist ?\")
            (esqlite-escape-string song ?\")
@@ -110,8 +109,8 @@
 (defun versuri-delete-lyrics (artist song)
   "Remove entry for ARTIST and SONG form the database."
   (print (format "%s - %s" artist song))
-  (esqlite-stream-execute
-   (versuri--db-stream)
+  (esqlite-execute
+   (versuri--db-file)
    (format "DELETE FROM lyrics WHERE artist=\"%s\" and song=\"%s\""
            artist song)))
 
